@@ -1,6 +1,7 @@
 // Selected dictionaries live in the URL (?dicts=wordnet,en-ko) so a link reproduces exactly what was on screen.
+// Word pages are /{lang}/word?word=<headword>&dicts=<slugs>; dicts is omitted when every dictionary is selected.
 import { useSyncExternalStore } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useNavigation } from "react-router";
 import { DICT, type DictId } from "./keys";
 import { useLang } from "./i18n";
 
@@ -22,9 +23,21 @@ export function parseDicts(value: string | null): DictId[] {
   return ALL_DICTS.filter((d) => picked.has(d));
 }
 
+/** Value of the dicts param, or null when every dictionary is selected (param omitted). */
+export function dictsParam(ids: DictId[]): string | null {
+  if (ids.length === ALL_DICTS.length) return null;
+  return ids.map((d) => slugOf.get(d)).join(",");
+}
+
 export function dictsQuery(ids: DictId[]): string {
-  if (ids.length === ALL_DICTS.length) return "";
-  return `?dicts=${ids.map((d) => slugOf.get(d)).join(",")}`;
+  const v = dictsParam(ids);
+  return v === null ? "" : `?dicts=${v}`;
+}
+
+/** Word page URL. Commas are left unescaped so shared links stay readable. */
+export function wordUrl(lang: string, word: string, ids: DictId[]): string {
+  const v = dictsParam(ids);
+  return `/${lang}/word?word=${encodeURIComponent(word)}${v === null ? "" : `&dicts=${v}`}`;
 }
 
 export const dictMask = (ids: DictId[]) => ids.reduce((m, d) => m | DICT[d], 0);
@@ -43,18 +56,23 @@ export function useHydrated() {
 }
 
 export function useDicts() {
-  const [params] = useSearchParams();
   const hydrated = useHydrated();
   const navigate = useNavigate();
   const location = useLocation();
-  const enabled = hydrated ? parseDicts(params.get("dicts")) : ALL_DICTS;
+  // While a newly enabled dictionary's chunk loads, reflect the pending URL so the toggle responds immediately.
+  const pending = useNavigation().location;
+  const current = pending && pending.pathname === location.pathname ? pending : location;
+  const enabled = hydrated ? parseDicts(new URLSearchParams(current.search).get("dicts")) : ALL_DICTS;
   const set = (ids: DictId[]) => {
-    const rest = new URLSearchParams(location.search);
-    rest.delete("dicts");
-    const own = dictsQuery(ids);
-    const other = rest.toString();
-    const search = own ? own + (other ? `&${other}` : "") : other ? `?${other}` : "";
-    navigate({ pathname: location.pathname, search, hash: location.hash }, { replace: true, preventScrollReset: true });
+    // keep the other params (e.g. word) in place; only replace dicts
+    const parts = current.search
+      .replace(/^\?/, "")
+      .split("&")
+      .filter((p) => p && !p.startsWith("dicts="));
+    const v = dictsParam(ids);
+    if (v !== null) parts.push(`dicts=${v}`);
+    const search = parts.length ? `?${parts.join("&")}` : "";
+    navigate({ pathname: current.pathname, search, hash: current.hash }, { replace: true, preventScrollReset: true });
   };
   const toggle = (id: DictId) => set(enabled.includes(id) ? enabled.filter((d) => d !== id) : ALL_DICTS.filter((d) => d === id || enabled.includes(d)));
   return { enabled, toggle, query: dictsQuery(enabled) };
@@ -63,10 +81,10 @@ export function useDicts() {
 /** Builds in-app links that keep the current UI language and dictionary selection. */
 export function useLinks() {
   const lang = useLang();
-  const { query } = useDicts();
+  const { enabled, query } = useDicts();
   return {
     lang,
-    word: (w: string) => `/${lang}/word/${encodeURIComponent(w)}${query}`,
+    word: (w: string) => wordUrl(lang, w, enabled),
     page: (p: string) => `/${lang}${p}${query}`,
   };
 }

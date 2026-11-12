@@ -1,8 +1,6 @@
 // Shared key / sharding helpers. Used by the data pipeline (scripts/build-data.ts),
 // the prerender loader (server) and the browser (client). Keep them pure.
 
-export const ENTRY_SHARDS = 4096;
-
 /** Lookup key for a headword: NFC + lowercase + trimmed. One page per key. */
 export function entryKey(word: string): string {
   return word.normalize("NFC").trim().toLowerCase();
@@ -23,8 +21,9 @@ function fnv1a(s: string): number {
   return h >>> 0;
 }
 
-export function shardOf(key: string): string {
-  return (fnv1a(key) % ENTRY_SHARDS).toString(16).padStart(4, "0");
+/** Chunk file name for a key in a dictionary with `shards` chunks. */
+export function shardOf(key: string, shards: number): string {
+  return (fnv1a(key) % shards).toString(16).padStart(Math.max(1, (shards - 1).toString(16).length), "0");
 }
 
 /** Bit flags marking which dictionaries contain a headword. */
@@ -35,6 +34,12 @@ export const DICT = {
   ko: 8, // Wiktionary Korean entries + reverse translations (KO->EN)
 } as const;
 export type DictId = keyof typeof DICT;
+
+/**
+ * Number of chunk files per dictionary (data/site/d/<dict>/<shard>.json).
+ * Sized so one chunk is roughly 150-200 KB raw / ~40 KB compressed.
+ */
+export const SHARDS: Record<DictId, number> = { wn: 256, en: 2048, enko: 32, ko: 128 };
 
 /** Ranking for prefix matches: lower is better (well-covered, short, plain words first). */
 export function rankScore([w, m]: [string, number]): number {

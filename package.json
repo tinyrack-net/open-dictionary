@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "fetch-data": "node scripts/fetch-data.ts",
-    "build-data": "node --max-old-space-size=12000 scripts/build-data.ts",
+    "build-data": "node --max-old-space-size=8000 scripts/build-data.ts",
     "dev": "react-router dev",
     "build": "react-router build && node scripts/postbuild.ts",
     "preview": "wrangler dev --port 4173",

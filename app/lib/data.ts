@@ -1,9 +1,12 @@
-// Data access shared by prerender (Node, reads data/site) and the browser (fetches /data/*).
-import { entryKey, foldKey, rankScore, shardOf } from "./keys";
-import type { Entry, IndexRow } from "./types";
+// Data access in the browser. Everything is fetched lazily from /data/* in small chunks:
+//   i/manifest.json + i/<n>.json   search index (headword -> which dictionaries have it)
+//   d/<dict>/<shard>.json          one dictionary's entries for a hash range of headwords
+import { DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "./keys";
+import type { DictData, Entry, IndexRow } from "./types";
 
 async function readJson<T>(rel: string): Promise<T | null> {
   if (import.meta.env.SSR) {
+    // build-time prerender (home page stats): read the generated files directly
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     try {
@@ -29,10 +32,57 @@ function cached<T>(rel: string): Promise<T | null> {
   return p;
 }
 
-export async function getEntry(word: string): Promise<Entry | null> {
+async function getPart<D extends DictId>(dict: D, key: string): Promise<DictData[D] | undefined> {
+  const shard = await cached<Record<string, DictData[D]>>(`d/${dict}/${shardOf(key, SHARDS[dict])}.json`);
+  return shard?.[key];
+}
+
+/** Index row whose key equals the word, if the headword exists. */
+async function lookup(word: string): Promise<IndexRow | null> {
   const key = entryKey(word);
-  const shard = await cached<Record<string, Entry>>(`e/${shardOf(key)}.json`);
-  return shard?.[key] ?? null;
+  const q = foldKey(word);
+  const manifest = await cached<Manifest>("i/manifest.json");
+  if (!q || !manifest) return null;
+  // rows with the same fold key (e.g. "cafe", "café") are adjacent; they may cross a chunk boundary
+  for (let c = chunkFor(manifest.first, q); c < manifest.first.length && manifest.first[c] <= q; c++) {
+    const chunk = await cached<Chunk>(`i/${c}.json`);
+    const hit = chunk?.rows.find((r) => entryKey(r[0]) === key);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export interface LoadedEntry {
+  entry: Entry;
+  /** Dictionaries that contain this headword (whether or not they were loaded). */
+  mask: number;
+}
+
+/**
+ * Loads a headword, fetching only the chunks of the requested dictionaries that contain it.
+ * Already-fetched chunks are cached, so toggling dictionaries back on costs nothing.
+ */
+export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEntry | null> {
+  const row = await lookup(word);
+  if (!row) return null;
+  const [w, mask] = row;
+  const key = entryKey(w);
+  const entry: Entry = { w };
+  await Promise.all(
+    dicts
+      .filter((d) => mask & DICT[d])
+      .map(async (d) => {
+        if (d === "ko") {
+          const part = await getPart("ko", key);
+          if (part?.ko) entry.ko = part.ko;
+          if (part?.rev) entry.koRev = part.rev;
+        } else {
+          const part = await getPart(d, key);
+          if (part) (entry as any)[d] = part;
+        }
+      }),
+  );
+  return { entry, mask };
 }
 
 interface Manifest {
@@ -44,13 +94,16 @@ interface Chunk {
   tops: Record<string, IndexRow[]>;
 }
 
-/** Index of the last chunk whose first key is <= q. */
+/**
+ * Index of the last chunk whose first key is < q: the chunk where rows >= q can begin.
+ * (Strict, because rows equal to q may also sit at the end of the previous chunk.)
+ */
 function chunkFor(first: string[], q: string) {
   let lo = 0;
   let hi = first.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (first[mid] <= q) lo = mid;
+    if (first[mid] < q) lo = mid;
     else hi = mid - 1;
   }
   return lo;

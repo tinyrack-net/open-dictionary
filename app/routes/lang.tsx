@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { data, Link, Outlet, useLocation, useParams } from "react-router";
+import { data, Link, Outlet, useLocation, useParams, useSearchParams } from "react-router";
 import type { Route } from "./+types/lang";
 import { LanguageMenu } from "~/components/LanguageMenu";
 import { SearchBox } from "~/components/SearchBox";
@@ -14,7 +14,9 @@ export const loader = ({ params }: Route.LoaderArgs) => check(params.lang);
 export const clientLoader = ({ params }: Route.ClientLoaderArgs) => check(params.lang);
 
 export default function LangLayout() {
-  const { lang, word } = useParams();
+  const { lang } = useParams();
+  const [params] = useSearchParams();
+  const word = params.get("word") ?? "";
   const { pathname } = useLocation();
   const links = useLinks();
   const t = STRINGS[links.lang];
@@ -31,7 +33,7 @@ export default function LangLayout() {
           <Link to={links.page("")} className="btn btn-ghost shrink-0 px-2 font-serif text-lg">
             📖 <span className={home ? "" : "hidden sm:inline"}>{t.siteName}</span>
           </Link>
-          <div className="min-w-0 flex-1">{!home && <SearchBox key={word} initial={word ?? ""} />}</div>
+          <div className="min-w-0 flex-1">{!home && <SearchBox key={word} initial={word} />}</div>
           <LanguageMenu />
         </div>
       </header>

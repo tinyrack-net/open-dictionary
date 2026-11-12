@@ -5,7 +5,10 @@ export default [
   index("routes/redirect.tsx"),
   route(":lang", "routes/lang.tsx", [
     index("routes/home.tsx"),
-    route("word/:word", "routes/word.tsx"),
+    // /{lang}/word?word=<headword>&dicts=<slugs>
+    route("word", "routes/word.tsx"),
+    // links from the first release: /{lang}/word/<headword> -> /{lang}/word?word=<headword>
+    route("word/:word", "routes/legacy-word.tsx"),
     route("about", "routes/about.tsx"),
   ]),
 ] satisfies RouteConfig;

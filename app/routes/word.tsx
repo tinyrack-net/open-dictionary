@@ -2,55 +2,64 @@ import { Link, type ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/word";
 import { DictPicker } from "~/components/DictPicker";
 import { getEntry, search } from "~/lib/data";
-import { DICTIONARIES, useDicts, useLinks } from "~/lib/dicts";
+import { DICTIONARIES, parseDicts, useDicts, useLinks } from "~/lib/dicts";
 import { isLang, posLabel, STRINGS, useT } from "~/lib/i18n";
-import { alternates } from "~/lib/seo";
+import { DICT } from "~/lib/keys";
 import type { EnKoGroup, Entry, KoReverse, WiktEntry, WnEntry } from "~/lib/types";
 
-async function load(word: string) {
-  const entry = await getEntry(word);
-  const suggestions = entry ? [] : (await search(word, 8)).map((r) => r[0]);
-  return { word, entry, suggestions };
+// /{lang}/word?word=<headword>&dicts=<slugs>
+// The HTML shell is prerendered once per UI language; the entry is loaded in the browser,
+// fetching only the chunks of the selected dictionaries (see app/lib/data.ts).
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
+  const params = new URL(request.url).searchParams;
+  const word = params.get("word")?.trim() ?? "";
+  if (!word) return { word, loaded: null, suggestions: [] as string[] };
+  const loaded = await getEntry(word, parseDicts(params.get("dicts")));
+  const suggestions = loaded ? [] : (await search(word, 8)).map((r) => r[0]);
+  return { word, loaded, suggestions };
 }
 
-// Build time: popular words are prerendered to static HTML (+ .data for client navigation).
-export async function loader({ params }: Route.LoaderArgs) {
-  return load(params.word);
+// Shown while the prerendered shell hydrates and the first chunks load.
+export function HydrateFallback() {
+  return (
+    <div className="py-8" aria-busy="true">
+      <div className="skeleton h-12 w-64" />
+      <div className="skeleton mt-4 h-5 w-40" />
+      <div className="skeleton mt-8 h-48 w-full" />
+    </div>
+  );
 }
 
-// Runtime: every other word is loaded in the browser from the sharded JSON files.
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  return load(params.word);
-}
-
-// The entry doesn't depend on ?dicts=, so toggling dictionaries must not refetch it.
-export function shouldRevalidate({ currentParams, nextParams, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-  if (currentParams.word === nextParams.word && currentParams.lang === nextParams.lang) return false;
-  return defaultShouldRevalidate;
+// Reload when the word changes, or when a newly selected dictionary hasn't been fetched yet.
+// (Deselecting, or reselecting an already-fetched dictionary, needs no reload: chunks are cached.)
+export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
+  if (currentUrl.searchParams.get("word") !== nextUrl.searchParams.get("word")) return true;
+  const before = parseDicts(currentUrl.searchParams.get("dicts"));
+  return parseDicts(nextUrl.searchParams.get("dicts")).some((d) => !before.includes(d));
 }
 
 export function meta({ loaderData: data, params }: Route.MetaArgs) {
   const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
-  const e = data?.entry;
+  const e = data?.loaded?.entry;
   const first = e?.wn?.[0]?.senses[0]?.def ?? e?.en?.[0]?.senses[0]?.g ?? e?.ko?.[0]?.senses[0]?.g ?? e?.enko?.[0]?.ko.map((k) => k.w).join(", ");
-  const w = e?.w ?? data?.word ?? params.word;
+  const w = e?.w ?? data?.word;
   return [
-    { title: `${w} — ${t.siteName}` },
+    { title: w ? `${w} — ${t.siteName}` : t.siteName },
     ...(first ? [{ name: "description", content: `${w}: ${first}` }] : []),
-    ...(e ? alternates(`/word/${encodeURIComponent(params.word)}`) : [{ name: "robots", content: "noindex" }]),
   ];
 }
 
 export default function WordPage({ loaderData }: Route.ComponentProps) {
-  const { entry, word, suggestions } = loaderData;
+  const { loaded, word, suggestions } = loaderData;
   const { enabled } = useDicts();
   const links = useLinks();
   const t = useT();
 
-  if (!entry) {
+  if (!loaded) {
     return (
       <div className="py-10">
-        <h1 className="font-serif text-4xl font-semibold break-words">{word}</h1>
+        {word && <h1 className="font-serif text-4xl font-semibold break-words">{word}</h1>}
         <div role="alert" className="alert alert-soft mt-6">
           <span>{t.notFound}</span>
         </div>
@@ -68,14 +77,15 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
     );
   }
 
+  const { entry, mask } = loaded;
   const sections = {
     wn: entry.wn && <WordNet entries={entry.wn} />,
     en: entry.en && <Wiktionary entries={entry.en} />,
     enko: entry.enko && <EnKo groups={entry.enko} />,
     ko: (entry.ko || entry.koRev) && <Korean entries={entry.ko} rev={entry.koRev} />,
   };
-  const available = DICTIONARIES.filter((d) => sections[d.id]);
-  const shown = available.filter((d) => enabled.includes(d.id));
+  const available = DICTIONARIES.filter((d) => mask & DICT[d.id]);
+  const shown = available.filter((d) => enabled.includes(d.id) && sections[d.id]);
 
   return (
     <div className="py-8">

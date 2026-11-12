@@ -5,20 +5,20 @@
 //   raw/ko.jsonl.gz      Wiktionary Korean entries  (kaikki.org / wiktextract)
 //
 // Output:
-//   data/site/e/<shard>.json   entries, { [entryKey]: Entry }, ENTRY_SHARDS files
-//   data/site/i/<prefix>.json  adaptive prefix index, IndexRow[]
-//   data/site/i/_split.json    prefixes that were split into longer prefixes
-//   data/site/meta.json        build stats shown on the site
-//   data/prerender.json          popular headwords to pre-render as HTML
+//   data/site/d/<dict>/<shard>.json  per-dictionary chunks, { [entryKey]: DictData[dict] }, SHARDS[dict] files
+//   data/site/i/manifest.json        first key of each search index chunk
+//   data/site/i/<n>.json             search index chunks: headword, dictionary bitmask
+//   data/site/meta.json              build stats shown on the site
 //
-// Run: node --max-old-space-size=12000 scripts/build-data.ts
+// Run: node --max-old-space-size=8000 scripts/build-data.ts
 
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
-import { DICT, entryKey, foldKey, rankScore, shardOf } from "../app/lib/keys.ts";
+import { DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
 import type {
+  DictData,
   EnKoGroup,
   Entry,
   IndexRow,
@@ -235,25 +235,42 @@ function rmrf(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+/** The part of an entry that belongs to one dictionary, or undefined if the word isn't in it. */
+const PART: { [D in DictId]: (e: Entry) => DictData[D] | undefined } = {
+  wn: (e) => e.wn,
+  en: (e) => e.en,
+  enko: (e) => e.enko,
+  ko: (e) => (e.ko || e.koRev ? { ...(e.ko && { ko: e.ko }), ...(e.koRev && { rev: e.koRev }) } : undefined),
+};
+
 function writeEntries() {
-  const dir = path.join(OUT, "e");
-  rmrf(dir);
-  const shards = new Map<string, [string, Entry][]>();
-  for (const [key, e] of entries) {
-    const s = shardOf(key);
-    let list = shards.get(s);
-    if (!list) shards.set(s, (list = []));
-    list.push([key, e]);
+  rmrf(path.join(OUT, "e")); // pre-split layout
+  for (const dict of Object.keys(SHARDS) as DictId[]) {
+    const dir = path.join(OUT, "d", dict);
+    rmrf(dir);
+    const shards = new Map<string, Record<string, unknown>>();
+    let count = 0;
+    for (const [key, e] of entries) {
+      const part = PART[dict](e);
+      if (!part) continue;
+      const s = shardOf(key, SHARDS[dict]);
+      let shard = shards.get(s);
+      if (!shard) shards.set(s, (shard = {}));
+      shard[key] = part;
+      count++;
+    }
+    let bytes = 0;
+    let max = 0;
+    for (const [s, shard] of shards) {
+      const json = JSON.stringify(shard);
+      bytes += json.length;
+      max = Math.max(max, json.length);
+      fs.writeFileSync(path.join(dir, `${s}.json`), json);
+    }
+    console.log(
+      `entries ${dict}: ${count} headwords in ${shards.size} chunks, ${(bytes / 1e6).toFixed(0)} MB, avg ${(bytes / shards.size / 1e3).toFixed(0)} KB, max ${(max / 1e3).toFixed(0)} KB`,
+    );
   }
-  let bytes = 0;
-  let max = 0;
-  for (const [s, list] of shards) {
-    const json = JSON.stringify(Object.fromEntries(list));
-    bytes += json.length;
-    max = Math.max(max, json.length);
-    fs.writeFileSync(path.join(dir, `${s}.json`), json);
-  }
-  console.log(`entries: ${entries.size} headwords in ${shards.size} shards, ${(bytes / 1e6).toFixed(0)} MB total, largest shard ${(max / 1e3).toFixed(0)} KB`);
 }
 
 /**
@@ -322,26 +339,6 @@ function writeMeta() {
   console.log("stats", stats);
 }
 
-function writePrerenderList() {
-  const simple = /^[\p{Ll}\p{Lo}]+$/u;
-  const en = [...entries]
-    .filter(([k, e]) => e.wn && e.en && simple.test(k) && /^[a-z]+$/.test(k))
-    .map(([k, e]) => [k, e.wn!.reduce((n, w) => n + w.senses.length, 0)] as const)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 1500)
-    .map(([k]) => k);
-  const ko = [...entries]
-    .filter(([k, e]) => e.ko && e.koRev && /^[\uac00-\ud7af]+$/.test(k))
-    .map(([k, e]) => [k, e.koRev!.length + e.ko!.reduce((n, w) => n + w.senses.length, 0)] as const)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 300)
-    .map(([k]) => k);
-  const words = uniq(["dictionary", "love", "run", "사랑", "사전", ...en, ...ko]).filter((k) => entries.has(k));
-  fs.mkdirSync(path.join(ROOT, "data"), { recursive: true });
-  fs.writeFileSync(path.join(ROOT, "data", "prerender.json"), JSON.stringify(words));
-  console.log(`prerender: ${words.length} words`);
-}
-
 const t0 = Date.now();
 loadWordNet();
 await loadWiktEnglish();
@@ -349,5 +346,4 @@ await loadWiktKorean();
 writeEntries();
 writeIndex();
 writeMeta();
-writePrerenderList();
 console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s, peak RSS ${(process.resourceUsage().maxRSS / 1024 / 1024).toFixed(1)} GB`);

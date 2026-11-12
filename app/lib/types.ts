@@ -51,6 +51,7 @@ export interface KoReverse {
   sense: string;
 }
 
+/** All data for one headword, assembled in the browser from the per-dictionary chunks. */
 export interface Entry {
   w: string; // display headword
   wn?: WnEntry[];
@@ -58,6 +59,14 @@ export interface Entry {
   enko?: EnKoGroup[];
   ko?: WiktEntry[];
   koRev?: KoReverse[];
+}
+
+/** What each dictionary chunk stores per key. */
+export interface DictData {
+  wn: WnEntry[];
+  en: WiktEntry[];
+  enko: EnKoGroup[];
+  ko: { ko?: WiktEntry[]; rev?: KoReverse[] };
 }
 
 /** Index row: [display headword, dictionary bitmask]. */
