@@ -12,6 +12,7 @@
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 
 @import "@tinyrack/ui/core.css";
+@import "@tinyrack/ui/components/accordion.css";
 @import "@tinyrack/ui/components/alert.css";
 @import "@tinyrack/ui/components/autocomplete.css";
 @import "@tinyrack/ui/components/badge.css";
@@ -26,8 +27,6 @@
 @import "@tinyrack/ui/components/separator.css";
 @import "@tinyrack/ui/components/skeleton.css";
 @import "@tinyrack/ui/components/text.css";
-@import "@tinyrack/ui/components/toggle.css";
-@import "@tinyrack/ui/components/toggle-group.css";
 
 @source "./**/*.{ts,tsx}";
 

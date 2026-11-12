@@ -1,10 +1,8 @@
-import { TRLinkButton } from "@tinyrack/ui/components/link-button";
+import { TRLink } from "@tinyrack/ui/components/link";
 import { TRText } from "@tinyrack/ui/components/text";
 import { Link } from "react-router";
 import type { Route } from "./+types/home";
-import { DictToggles } from "~/components/DictToggles";
 import { SearchBox } from "~/components/SearchBox";
-import { getMeta } from "~/lib/data";
 import { STRINGS, useT } from "~/lib/i18n";
 import { alternates } from "~/lib/seo";
 import { isLang, useSettings } from "~/lib/settings";
@@ -14,67 +12,25 @@ export function meta({ params }: Route.MetaArgs) {
   return [{ title: `${t.siteName} — ${t.tagline}` }, { name: "description", content: t.description }, ...alternates("")];
 }
 
-export async function loader() {
-  return { meta: await getMeta() };
-}
-export async function clientLoader() {
-  return { meta: await getMeta() };
-}
+const SAMPLES = ["serendipity", "dictionary", "run", "사랑", "먹다", "사전"];
 
-const SAMPLES = ["dictionary", "serendipity", "run", "water", "사랑", "사전", "물", "먹다"];
-
-export default function Home({ loaderData }: Route.ComponentProps) {
+/** Just the search box: the page exists to look a word up. */
+export default function Home() {
   const t = useT();
   const settings = useSettings();
-  const s = loaderData.meta?.stats;
-  const stats = s
-    ? [
-        [t.stats.headwords, s.headwords],
-        [t.stats.wn, s.wn],
-        [t.stats.enko, s.enko],
-        [t.stats.ko, s.ko],
-      ]
-    : [];
-
   return (
-    <section className="mx-auto flex max-w-tinyrack-overlay-width-md flex-col items-stretch gap-tinyrack-xl py-tinyrack-3xl sm:pt-tinyrack-3xl">
-      <hgroup className="flex flex-col items-center gap-tinyrack-xs">
-        <TRText as="h1" variant="displayLg" align="center">
-          {t.siteName}
-        </TRText>
-        <TRText as="p" color="muted" align="center">
-          {t.tagline}
-        </TRText>
-      </hgroup>
-
+    <section className="mx-auto flex max-w-tinyrack-overlay-width-md flex-col gap-tinyrack-lg pt-tinyrack-3xl pb-tinyrack-2xl sm:pt-tinyrack-3xl">
+      <TRText as="h1" variant="headingLg" align="center">
+        {t.siteName}
+      </TRText>
       <SearchBox large autoFocus />
-      <DictToggles center />
-
-      <nav aria-label={t.try} className="flex flex-wrap items-center justify-center gap-tinyrack-xs">
-        <TRText variant="bodySm" color="muted">
-          {t.try}
-        </TRText>
+      <TRText as="p" variant="bodySm" color="muted" align="center" className="flex flex-wrap justify-center gap-x-tinyrack-md gap-y-tinyrack-xs">
         {SAMPLES.map((w) => (
-          <TRLinkButton key={w} appearance="ghost" uiSize="sm" render={<Link to={settings.wordHref(w)} />}>
+          <TRLink key={w} variant="muted" render={<Link to={settings.wordHref(w)} />}>
             {w}
-          </TRLinkButton>
+          </TRLink>
         ))}
-      </nav>
-
-      {stats.length > 0 && (
-        <dl className="grid grid-cols-2 gap-tinyrack-lg pt-tinyrack-xl sm:grid-cols-4">
-          {stats.map(([label, n]) => (
-            <TRText as="span" key={label} className="flex flex-col items-center gap-tinyrack-2xs">
-              <TRText as="dd" variant="headingMd" className="tabular-nums">
-                {Number(n).toLocaleString("en-US")}
-              </TRText>
-              <TRText as="dt" variant="caption" color="muted">
-                {label}
-              </TRText>
-            </TRText>
-          ))}
-        </dl>
-      )}
+      </TRText>
     </section>
   );
 }

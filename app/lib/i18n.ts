@@ -25,8 +25,15 @@ const en = {
   translatedAs: "English words translated as this",
   notFound: "No entry found.",
   didYouMean: "Did you mean",
-  onlyIn: (names: string) => `This word is only in: ${names}. Turn that dictionary on above.`,
-  noneSelected: "No dictionary selected. Choose at least one above.",
+  onlyIn: (names: string) => `This word is only in: ${names}. Turn it on in Settings.`,
+  noneSelected: "No dictionary selected. Choose at least one in Settings.",
+  koreanSection: "Korean",
+  englishSection: "English",
+  meaningsSection: "Meanings",
+  examplesSection: "Examples",
+  formOf: "Form of",
+  moreMeanings: (n: number) => `${n} more meaning${n === 1 ? "" : "s"}`,
+  sourcesLine: "Sources",
   dataFrom: "Data from",
   and: "and",
   via: "via",
@@ -50,6 +57,24 @@ const en = {
   searchResults: "Suggestions",
   clear: "Clear",
   pos: {} as Record<string, string>,
+  /** Short part-of-speech labels for the compact list. */
+  posShort: {
+    noun: "n.",
+    verb: "v.",
+    adj: "adj.",
+    adv: "adv.",
+    pron: "pron.",
+    prep: "prep.",
+    conj: "conj.",
+    intj: "interj.",
+    num: "num.",
+    det: "det.",
+    name: "name",
+    phrase: "phr.",
+    particle: "part.",
+    suffix: "suffix",
+    prefix: "prefix",
+  } as Record<string, string>,
 };
 
 const ko: typeof en = {
@@ -73,8 +98,15 @@ const ko: typeof en = {
   translatedAs: "이 단어로 번역되는 영어 단어",
   notFound: "표제어를 찾을 수 없습니다.",
   didYouMean: "혹시 이 단어인가요",
-  onlyIn: (names: string) => `이 단어는 다음 사전에만 있습니다: ${names}. 위에서 사전을 켜 주세요.`,
-  noneSelected: "선택한 사전이 없습니다. 위에서 하나 이상 선택해 주세요.",
+  onlyIn: (names: string) => `이 단어는 다음 사전에만 있습니다: ${names}. 설정에서 켜 주세요.`,
+  noneSelected: "선택한 사전이 없습니다. 설정에서 하나 이상 선택해 주세요.",
+  koreanSection: "한국어 뜻",
+  englishSection: "영어 뜻",
+  meaningsSection: "영영 뜻",
+  examplesSection: "예문",
+  formOf: "원형",
+  moreMeanings: (n: number) => `뜻 ${n}개 더 보기`,
+  sourcesLine: "출처",
   dataFrom: "데이터 출처:",
   and: "및",
   via: "가공",
@@ -130,6 +162,23 @@ const ko: typeof en = {
     postp: "후치사",
     interfix: "삽입사",
   },
+  posShort: {
+    noun: "명",
+    verb: "동",
+    adj: "형",
+    adv: "부",
+    pron: "대",
+    prep: "전",
+    conj: "접",
+    intj: "감",
+    num: "수",
+    det: "관",
+    name: "고유",
+    phrase: "구",
+    particle: "조",
+    suffix: "접미",
+    prefix: "접두",
+  },
 };
 
 export const STRINGS: Record<Lang, typeof en> = { en, ko };
@@ -145,4 +194,8 @@ export function useT() {
 
 export function posLabel(t: typeof en, pos: string) {
   return t.pos[pos] ?? pos;
+}
+
+export function posShort(t: typeof en, pos: string) {
+  return t.posShort[pos] ?? posLabel(t, pos);
 }

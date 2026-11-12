@@ -1,3 +1,7 @@
 allowBuilds:
   esbuild: true
   workerd: true
+# pnpm holds back packages published less than a day ago. @tinyrack/ui 0.35.1 is our own
+# release (tinyrack-net/design#579/#580, npm provenance); remove this entry after 2026-11-13.
+minimumReleaseAgeExclude:
+  - '@tinyrack/ui@0.35.1'
