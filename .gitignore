@@ -11,3 +11,5 @@
 /.wrangler/
 /wrangler.log
 /wrangler.err
+/dev.log
+/dev.err

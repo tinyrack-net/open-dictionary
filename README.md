@@ -1,7 +1,8 @@
 # Open Dictionary
 
 A free, static English / English↔Korean dictionary built from open data, with React Router
-(framework mode, `ssr: false` + prerender), Tailwind CSS and daisyUI. It is hosted on Cloudflare Workers static assets.
+(framework mode, `ssr: false` + prerender), [@tinyrack/ui](https://www.npmjs.com/package/@tinyrack/ui) and
+Tailwind CSS. It is hosted on Cloudflare Workers static assets.
 
 ## Dictionaries
 
@@ -14,15 +15,26 @@ A free, static English / English↔Korean dictionary built from open data, with 
 
 ## URLs
 
+Every setting is in the URL, so a link always shows exactly what was on screen. Nothing is stored in
+localStorage or cookies.
+
 ```
-/                                  redirects to /en or /ko (saved choice, then browser language)
-/{lang}                            home         lang = en | ko (UI language)
-/{lang}/word?word=love             entry
-/{lang}/word?word=love&dicts=wordnet,en-ko
-                                   only these dictionaries (omitted = all); shared links show the same view
-/{lang}/about                      sources & licenses
-/{lang}/word/love                  old URL, redirects to /{lang}/word?word=love
+/ko/word?word=love&dicts=wordnet,en-ko&theme=dark
+ │              │          │                  └ theme  auto (omitted) | light | dark
+ │              │          └ dicts  dictionaries shown (omitted = all)
+ │              └ word   headword
+ └ UI language (en | ko), a path segment so prerendered HTML is already translated
+
+/                       redirects to /en or /ko by browser language, keeping the query string
+/{lang}                 home
+/{lang}/word?word=...   entry
+/{lang}/about           sources & licenses
+/{lang}/word/love       old URL, redirects to /{lang}/word?word=love
 ```
+
+`app/lib/settings.ts` is the single place that reads and writes settings (`useSettings()`), and every
+in-app link is built from it. `?theme=` is applied by an inline script before first paint, so dark links
+don't flash light.
 
 ## Development
 
@@ -33,6 +45,7 @@ pnpm install
 pnpm fetch-data   # ~570 MB download into raw/
 pnpm build-data   # ~1 min, ~3 GB RAM: writes data/site
 pnpm dev          # dev server, serves data/site at /data
+pnpm check:design # tinyrack-ui-check: Tinyrack components and tokens only (also runs in CI)
 pnpm build        # ~10 s: builds the app, copies data into build/client
 pnpm preview      # wrangler dev on http://localhost:4173 (same routing as production)
 ```

@@ -1,15 +1,23 @@
+import { TRAlert } from "@tinyrack/ui/components/alert";
+import { TRBadge } from "@tinyrack/ui/components/badge";
+import { TRCard } from "@tinyrack/ui/components/card";
+import { TRCollapsible } from "@tinyrack/ui/components/collapsible";
+import { TRLink } from "@tinyrack/ui/components/link";
+import { TRLinkButton } from "@tinyrack/ui/components/link-button";
+import { TRSkeleton } from "@tinyrack/ui/components/skeleton";
+import { TRText } from "@tinyrack/ui/components/text";
 import { Link, type ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/word";
-import { DictPicker } from "~/components/DictPicker";
+import { DictToggles } from "~/components/DictToggles";
 import { getEntry, search } from "~/lib/data";
-import { DICTIONARIES, parseDicts, useDicts, useLinks } from "~/lib/dicts";
-import { isLang, posLabel, STRINGS, useT } from "~/lib/i18n";
+import { posLabel, STRINGS, useT } from "~/lib/i18n";
 import { DICT } from "~/lib/keys";
+import { DICTIONARIES, isLang, parseDicts, useSettings } from "~/lib/settings";
 import type { EnKoGroup, Entry, KoReverse, WiktEntry, WnEntry } from "~/lib/types";
 
-// /{lang}/word?word=<headword>&dicts=<slugs>
-// The HTML shell is prerendered once per UI language; the entry is loaded in the browser,
-// fetching only the chunks of the selected dictionaries (see app/lib/data.ts).
+// /{lang}/word?word=<headword>&dicts=<slugs>&theme=<theme>
+// One prerendered shell per UI language; the entry is loaded in the browser, fetching only the
+// chunks of the selected dictionaries that contain the word (see app/lib/data.ts).
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const params = new URL(request.url).searchParams;
   const word = params.get("word")?.trim() ?? "";
@@ -19,19 +27,12 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   return { word, loaded, suggestions };
 }
 
-// Shown while the prerendered shell hydrates and the first chunks load.
 export function HydrateFallback() {
-  return (
-    <div className="py-8" aria-busy="true">
-      <div className="skeleton h-12 w-64" />
-      <div className="skeleton mt-4 h-5 w-40" />
-      <div className="skeleton mt-8 h-48 w-full" />
-    </div>
-  );
+  return <WordSkeleton />;
 }
 
 // Reload when the word changes, or when a newly selected dictionary hasn't been fetched yet.
-// (Deselecting, or reselecting an already-fetched dictionary, needs no reload: chunks are cached.)
+// Theme changes and deselecting a dictionary never refetch.
 export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
   if (currentUrl.searchParams.get("word") !== nextUrl.searchParams.get("word")) return true;
@@ -44,36 +45,36 @@ export function meta({ loaderData: data, params }: Route.MetaArgs) {
   const e = data?.loaded?.entry;
   const first = e?.wn?.[0]?.senses[0]?.def ?? e?.en?.[0]?.senses[0]?.g ?? e?.ko?.[0]?.senses[0]?.g ?? e?.enko?.[0]?.ko.map((k) => k.w).join(", ");
   const w = e?.w ?? data?.word;
-  return [
-    { title: w ? `${w} — ${t.siteName}` : t.siteName },
-    ...(first ? [{ name: "description", content: `${w}: ${first}` }] : []),
-  ];
+  return [{ title: w ? `${w} — ${t.siteName}` : t.siteName }, ...(first ? [{ name: "description", content: `${w}: ${first}` }] : [])];
 }
 
 export default function WordPage({ loaderData }: Route.ComponentProps) {
   const { loaded, word, suggestions } = loaderData;
-  const { enabled } = useDicts();
-  const links = useLinks();
+  const settings = useSettings();
   const t = useT();
 
   if (!loaded) {
     return (
-      <div className="py-10">
-        {word && <h1 className="font-serif text-4xl font-semibold break-words">{word}</h1>}
-        <div role="alert" className="alert alert-soft mt-6">
-          <span>{t.notFound}</span>
-        </div>
-        {suggestions.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-base-content/60">{t.didYouMean}:</span>
-            {suggestions.map((s) => (
-              <Link key={s} className="badge badge-outline badge-lg" to={links.word(s)}>
-                {s}
-              </Link>
-            ))}
-          </div>
+      <article className="flex flex-col gap-tinyrack-lg py-tinyrack-2xl">
+        {word && (
+          <TRText as="h1" variant="display" className="break-words">
+            {word}
+          </TRText>
         )}
-      </div>
+        <TRAlert.Root variant="neutral">
+          <TRAlert.Title>{t.notFound}</TRAlert.Title>
+          {suggestions.length > 0 && (
+            <TRAlert.Description render={<TRText as="span" className="flex flex-wrap items-center gap-tinyrack-xs" />}>
+              {t.didYouMean}:
+              {suggestions.map((s) => (
+                <TRLinkButton key={s} appearance="outline" uiSize="sm" render={<Link to={settings.wordHref(s)} />}>
+                  {s}
+                </TRLinkButton>
+              ))}
+            </TRAlert.Description>
+          )}
+        </TRAlert.Root>
+      </article>
     );
   }
 
@@ -85,42 +86,58 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
     ko: (entry.ko || entry.koRev) && <Korean entries={entry.ko} rev={entry.koRev} />,
   };
   const available = DICTIONARIES.filter((d) => mask & DICT[d.id]);
-  const shown = available.filter((d) => enabled.includes(d.id) && sections[d.id]);
+  const shown = available.filter((d) => settings.dicts.includes(d.id) && sections[d.id]);
 
   return (
-    <div className="py-8">
-      <h1 className="font-serif text-5xl font-semibold tracking-tight break-words">{entry.w}</h1>
-      <Pronunciation entry={entry} />
-      <div className="mt-5">
-        <DictPicker />
-      </div>
+    <article className="flex flex-col gap-tinyrack-xl py-tinyrack-2xl">
+      <header className="flex flex-col gap-tinyrack-sm">
+        <TRText as="h1" variant="display" lang={/[\uac00-\ud7af]/.test(entry.w) ? "ko" : "en"} className="break-words">
+          {entry.w}
+        </TRText>
+        <Pronunciation entry={entry} />
+      </header>
+
+      <DictToggles />
+
       {shown.length === 0 && (
-        <div role="alert" className="alert alert-info alert-soft mt-8">
-          <span>{enabled.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => t.dict[d.id]).join(", "))}</span>
-        </div>
+        <TRAlert.Root variant="info">
+          <TRAlert.Description>
+            {settings.dicts.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => t.dict[d.id]).join(", "))}
+          </TRAlert.Description>
+        </TRAlert.Root>
       )}
+
       {shown.map((d) => (
-        <section key={d.id} className="card card-border mt-6 bg-base-100 shadow-sm" aria-labelledby={`dict-${d.id}`}>
-          <div className="card-body gap-4 p-5 sm:p-7">
-            <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-base-200 pb-3">
-              <h2 id={`dict-${d.id}`} className="card-title">
-                {t.dict[d.id]}
-              </h2>
-              <span className="text-xs text-base-content/50">
-                {d.source} · {d.license}
-              </span>
-            </header>
-            {sections[d.id]}
-          </div>
-        </section>
+        <TRCard.Root key={d.id} variant="outlined" padding="lg" render={<section aria-labelledby={`dict-${d.id}`} />}>
+          <TRCard.Header className="flex flex-wrap items-baseline justify-between gap-tinyrack-sm">
+            <TRCard.Title id={`dict-${d.id}`} render={<TRText as="h2" variant="headingSm" />}>
+              {t.dict[d.id]}
+            </TRCard.Title>
+            <TRText variant="caption" color="muted">
+              {d.source} · {d.license}
+            </TRText>
+          </TRCard.Header>
+          <TRCard.Content className="flex flex-col gap-tinyrack-lg">{sections[d.id]}</TRCard.Content>
+        </TRCard.Root>
       ))}
-    </div>
+    </article>
   );
 }
 
 // ---------------------------------------------------------------- pieces
 
+function WordSkeleton() {
+  return (
+    <article className="flex flex-col gap-tinyrack-xl py-tinyrack-2xl" aria-busy="true">
+      <TRSkeleton shape="text" className="w-tinyrack-measure-lg" />
+      <TRSkeleton shape="text" className="w-tinyrack-measure-md" />
+      <TRSkeleton shape="rectangle" className="h-tinyrack-measure-md w-full" />
+    </article>
+  );
+}
+
 function Pronunciation({ entry }: { entry: Entry }) {
+  const t = useT();
   const wn = entry.wn?.flatMap((w) => w.pron ?? []) ?? [];
   const items = wn.length
     ? wn.map((p) => ({ v: `/${p.v}/`, tag: p.var }))
@@ -130,30 +147,30 @@ function Pronunciation({ entry }: { entry: Entry }) {
   const ko = entry.ko?.[0];
   if (!uniq.length && !ko?.roman) return null;
   return (
-    <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-base-content/70">
-      {ko?.roman && <span className="italic">{ko.roman}</span>}
-      {ko?.hanja && <span>{ko.hanja}</span>}
+    <TRText as="p" color="muted" aria-label={t.pronunciation} className="flex flex-wrap items-center gap-x-tinyrack-lg gap-y-tinyrack-xs">
+      {ko?.roman && <TRText as="i">{ko.roman}</TRText>}
+      {ko?.hanja && <TRText lang="ko">{ko.hanja}</TRText>}
       {uniq.map((p) => (
-        <span key={p.v + p.tag} className="flex items-center gap-1">
-          {p.tag && <span className="badge badge-ghost badge-xs">{p.tag}</span>}
-          <span className="font-mono text-[0.95em]">{p.v}</span>
-        </span>
+        <TRText key={p.v + p.tag} className="flex items-center gap-tinyrack-xs">
+          {p.tag && <TRBadge>{p.tag}</TRBadge>}
+          <TRText variant="code">{p.v}</TRText>
+        </TRText>
       ))}
-    </p>
+    </TRText>
   );
 }
 
 function WordLinks({ words }: { words: string[] }) {
-  const links = useLinks();
+  const settings = useSettings();
   return (
     <>
       {words.map((w, i) => (
-        <span key={w + i}>
+        <TRText key={w + i}>
           {i > 0 && ", "}
-          <Link className="link link-primary link-hover" to={links.word(w)}>
+          <TRLink render={<Link to={settings.wordHref(w)} />} underline="hover">
             {w}
-          </Link>
-        </span>
+          </TRLink>
+        </TRText>
       ))}
     </>
   );
@@ -161,15 +178,20 @@ function WordLinks({ words }: { words: string[] }) {
 
 function Pos({ children }: { children: string }) {
   const t = useT();
-  return <h3 className="mt-2 mb-1 text-sm font-semibold tracking-wide text-base-content/60 uppercase first:mt-0">{posLabel(t, children)}</h3>;
+  return (
+    <TRText as="h3" variant="label" color="muted">
+      {posLabel(t, children)}
+    </TRText>
+  );
 }
 
 function Related({ label, words }: { label: string; words?: string[] }) {
   if (!words?.length) return null;
   return (
-    <span className="mr-4 text-sm">
-      <span className="text-base-content/50">{label}:</span> <WordLinks words={words} />
-    </span>
+    <TRText variant="bodySm">
+      <TRText color="muted">{label}: </TRText>
+      <WordLinks words={words} />
+    </TRText>
   );
 }
 
@@ -177,13 +199,38 @@ function Etymology({ text }: { text?: string }) {
   const t = useT();
   if (!text) return null;
   return (
-    <details className="collapse-arrow collapse mt-2 border border-base-200 text-sm">
-      <summary className="collapse-title min-h-0 py-2 text-base-content/60">{t.etymology}</summary>
-      <div className="collapse-content">
-        <p>{text}</p>
-      </div>
-    </details>
+    <TRCollapsible.Root>
+      <TRCollapsible.Trigger>{t.etymology}</TRCollapsible.Trigger>
+      <TRCollapsible.Panel>
+        <TRText as="p" variant="bodySm" color="muted" className="reading-measure">
+          {text}
+        </TRText>
+      </TRCollapsible.Panel>
+    </TRCollapsible.Root>
   );
+}
+
+function Example({ text, sub }: { text: string; sub?: (string | undefined)[] }) {
+  return (
+    <blockquote className="border-l-tinyrack-strong border-tinyrack-border pl-tinyrack-md">
+      <TRText as="p" variant="bodySm">
+        {text}
+      </TRText>
+      {sub?.filter(Boolean).map((s) => (
+        <TRText as="p" key={s} variant="bodySm" color="muted">
+          {s}
+        </TRText>
+      ))}
+    </blockquote>
+  );
+}
+
+function SenseItem({ children }: { children: React.ReactNode }) {
+  return <li className="flex flex-col gap-tinyrack-xs pl-tinyrack-2xs">{children}</li>;
+}
+
+function SenseList({ children }: { children: React.ReactNode }) {
+  return <ol className="flex list-decimal flex-col gap-tinyrack-md pl-tinyrack-xl marker:text-tinyrack-text-muted">{children}</ol>;
 }
 
 function WordNet({ entries }: { entries: WnEntry[] }) {
@@ -191,67 +238,64 @@ function WordNet({ entries }: { entries: WnEntry[] }) {
   return (
     <>
       {entries.map((e, i) => (
-        <div key={i}>
+        <section key={i} className="flex flex-col gap-tinyrack-sm">
           <Pos>{e.pos}</Pos>
-          <ol className="list-decimal space-y-3 pl-6 marker:text-base-content/40">
+          <SenseList>
             {e.senses.map((s, j) => (
-              <li key={j}>
-                <p>{s.def}</p>
-                {s.ex?.map((x, k) => (
-                  <p key={k} className="mt-0.5 text-base-content/70 italic">
-                    “{x}”
-                  </p>
+              <SenseItem key={j}>
+                <TRText as="p" className="reading-measure">
+                  {s.def}
+                </TRText>
+                {s.ex?.map((x) => (
+                  <Example key={x} text={`“${x}”`} />
                 ))}
                 {(s.syn || s.broader) && (
-                  <p className="mt-1">
+                  <TRText as="p" className="flex flex-wrap gap-x-tinyrack-lg">
                     <Related label={t.synonyms} words={s.syn} />
                     <Related label={t.typeOf} words={s.broader} />
-                  </p>
+                  </TRText>
                 )}
-              </li>
+              </SenseItem>
             ))}
-          </ol>
-        </div>
+          </SenseList>
+        </section>
       ))}
     </>
   );
 }
 
-function SenseList({ entry }: { entry: WiktEntry }) {
+function WiktSenses({ entry }: { entry: WiktEntry }) {
   const t = useT();
   return (
-    <ol className="list-decimal space-y-3 pl-6 marker:text-base-content/40">
+    <SenseList>
       {entry.senses.map((s, j) => (
-        <li key={j}>
-          <p>
+        <SenseItem key={j}>
+          <TRText as="p" className="reading-measure">
             {s.tags?.map((tag) => (
-              <span key={tag} className="badge badge-ghost badge-sm mr-1 align-middle">
+              <TRBadge key={tag} className="mr-tinyrack-xs">
                 {tag}
-              </span>
+              </TRBadge>
             ))}
-            {s.parent && <span className="text-base-content/60">{s.parent} → </span>}
+            {s.parent && <TRText color="muted">{s.parent} → </TRText>}
             {s.g}
             {s.of && (
-              <span className="ml-1 text-sm">
-                → <WordLinks words={[s.of]} />
-              </span>
+              <TRText variant="bodySm">
+                {" → "}
+                <WordLinks words={[s.of]} />
+              </TRText>
             )}
-          </p>
+          </TRText>
           {s.ex?.map((x, k) => (
-            <blockquote key={k} className="mt-1 border-l-2 border-base-300 pl-3 text-sm">
-              <p>{x.t}</p>
-              {x.roman && <p className="text-base-content/60 italic">{x.roman}</p>}
-              {x.en && <p className="text-base-content/60">{x.en}</p>}
-            </blockquote>
+            <Example key={k} text={x.t} sub={[x.roman, x.en]} />
           ))}
           {s.syn && (
-            <p className="mt-1">
+            <TRText as="p">
               <Related label={t.synonyms} words={s.syn} />
-            </p>
+            </TRText>
           )}
-        </li>
+        </SenseItem>
       ))}
-    </ol>
+    </SenseList>
   );
 }
 
@@ -259,86 +303,100 @@ function Wiktionary({ entries }: { entries: WiktEntry[] }) {
   return (
     <>
       {entries.map((e, i) => (
-        <div key={i}>
+        <section key={i} className="flex flex-col gap-tinyrack-sm">
           <Pos>{e.pos}</Pos>
           {e.forms && (
-            <p className="mb-2 flex flex-wrap gap-x-3 text-sm">
+            <TRText as="p" variant="bodySm" className="flex flex-wrap gap-x-tinyrack-md">
               {e.forms.map((f, k) => (
-                <span key={k}>
-                  {f.tags && <span className="text-base-content/50">{f.tags.join(" ")} </span>}
-                  <b className="font-medium">{f.f}</b>
-                </span>
+                <TRText key={k}>
+                  {f.tags && <TRText color="muted">{f.tags.join(" ")} </TRText>}
+                  <TRText weight="medium">{f.f}</TRText>
+                </TRText>
               ))}
-            </p>
+            </TRText>
           )}
-          <SenseList entry={e} />
+          <WiktSenses entry={e} />
           <Etymology text={e.ety} />
-        </div>
+        </section>
       ))}
     </>
   );
 }
 
 function EnKo({ groups }: { groups: EnKoGroup[] }) {
-  const links = useLinks();
+  const settings = useSettings();
   const t = useT();
   return (
-    <ul className="list">
+    <dl className="flex flex-col divide-y-tinyrack-default divide-tinyrack-border">
       {groups.map((g, i) => (
-        <li key={i} className="list-row grid-cols-1 gap-1 px-0 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-4">
-          <div className="text-base-content/70">
-            <span className="badge badge-ghost badge-xs mr-1.5 align-middle">{posLabel(t, g.pos)}</span>
+        <TRText
+          as="span"
+          key={i}
+          className="grid gap-tinyrack-xs py-tinyrack-md first:pt-0 sm:grid-cols-5 sm:gap-tinyrack-lg"
+        >
+          <TRText as="dt" color="muted" className="sm:col-span-2">
+            <TRBadge className="mr-tinyrack-xs">{posLabel(t, g.pos)}</TRBadge>
             {g.sense || "—"}
-          </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
+          </TRText>
+          <TRText as="dd" lang="ko" className="flex flex-wrap gap-x-tinyrack-md gap-y-tinyrack-2xs sm:col-span-3">
             {g.ko.map((k) => (
-              <span key={k.w}>
-                <Link className="link link-primary link-hover text-lg" to={links.word(k.w)}>
+              <TRText key={k.w}>
+                <TRLink render={<Link to={settings.wordHref(k.w)} />} underline="hover" className="text-tinyrack-lg">
                   {k.w}
-                </Link>
+                </TRLink>
                 {(k.alt || k.roman) && (
-                  <span className="ml-1 text-sm text-base-content/60">
-                    {k.alt && <span className="mr-1">{k.alt}</span>}
-                    {k.roman && <i>{k.roman}</i>}
-                  </span>
+                  <TRText variant="bodySm" color="muted">
+                    {" "}
+                    {k.alt}
+                    {k.alt && k.roman && " "}
+                    {k.roman && <TRText as="i">{k.roman}</TRText>}
+                  </TRText>
                 )}
-              </span>
+              </TRText>
             ))}
-          </div>
-        </li>
+          </TRText>
+        </TRText>
       ))}
-    </ul>
+    </dl>
   );
 }
 
 function Korean({ entries, rev }: { entries?: WiktEntry[]; rev?: KoReverse[] }) {
-  const links = useLinks();
+  const settings = useSettings();
   const t = useT();
   return (
     <>
       {entries?.map((e, i) => (
-        <div key={i}>
+        <section key={i} className="flex flex-col gap-tinyrack-sm">
           <Pos>{e.pos}</Pos>
-          {e.hanja && <p className="mb-1 text-base-content/70">{e.hanja}</p>}
-          <SenseList entry={e} />
+          {e.hanja && (
+            <TRText as="p" color="muted" lang="ko">
+              {e.hanja}
+            </TRText>
+          )}
+          <WiktSenses entry={e} />
           <Etymology text={e.ety} />
-        </div>
+        </section>
       ))}
       {rev && (
-        <div className={entries ? "mt-2 border-t border-base-200 pt-4" : ""}>
-          <h3 className="mb-2 text-sm font-semibold tracking-wide text-base-content/60 uppercase">{t.translatedAs}</h3>
-          <ul className="space-y-1">
+        <section className="flex flex-col gap-tinyrack-sm">
+          <TRText as="h3" variant="label" color="muted">
+            {t.translatedAs}
+          </TRText>
+          <ul className="flex flex-col gap-tinyrack-xs">
             {rev.map((r, i) => (
               <li key={i}>
-                <Link className="link link-primary link-hover font-medium" to={links.word(r.en)}>
-                  {r.en}
-                </Link>{" "}
-                <span className="badge badge-ghost badge-xs align-middle">{posLabel(t, r.pos)}</span>{" "}
-                {r.sense && <span className="text-base-content/70">— {r.sense}</span>}
+                <TRText as="p">
+                  <TRLink render={<Link to={settings.wordHref(r.en)} />} underline="hover" lang="en">
+                    {r.en}
+                  </TRLink>{" "}
+                  <TRBadge>{posLabel(t, r.pos)}</TRBadge>{" "}
+                  {r.sense && <TRText color="muted">— {r.sense}</TRText>}
+                </TRText>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
     </>
   );

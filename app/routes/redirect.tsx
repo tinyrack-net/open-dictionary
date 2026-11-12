@@ -1,11 +1,10 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/redirect";
-import { detectLang } from "~/lib/i18n";
+import { browserLang } from "~/lib/settings";
 
-// "/" is not prerendered: it is served by the SPA fallback and redirects in the browser.
+// "/" is served by the SPA fallback: pick the UI language from the browser and keep the query string.
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
-  const url = new URL(request.url);
-  return redirect(`/${detectLang()}${url.search}`);
+  return redirect(`/${browserLang()}${new URL(request.url).search}`);
 }
 
 export default function Redirect() {

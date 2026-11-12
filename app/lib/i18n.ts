@@ -1,12 +1,8 @@
 // UI strings for each interface language. The language is the first path segment (/en/..., /ko/...).
 import { useParams } from "react-router";
+import { DEFAULT_LANG, isLang, type Lang } from "./settings";
 
-export const LANGS = ["en", "ko"] as const;
-export type Lang = (typeof LANGS)[number];
-export const DEFAULT_LANG: Lang = "en";
 export const LANG_NAMES: Record<Lang, string> = { en: "English", ko: "한국어" };
-
-export const isLang = (v: unknown): v is Lang => LANGS.includes(v as Lang);
 
 const en = {
   siteName: "Open Dictionary",
@@ -46,6 +42,13 @@ const en = {
   backToSearch: "Back to search",
   loading: "Loading…",
   language: "Language",
+  settings: "Settings",
+  theme: "Theme",
+  themes: { auto: "System", light: "Light", dark: "Dark" },
+  noResults: "No matching words",
+  pronunciation: "Pronunciation",
+  searchResults: "Suggestions",
+  clear: "Clear",
   pos: {} as Record<string, string>,
 };
 
@@ -87,6 +90,13 @@ const ko: typeof en = {
   backToSearch: "검색으로 돌아가기",
   loading: "불러오는 중…",
   language: "언어",
+  settings: "설정",
+  theme: "테마",
+  themes: { auto: "시스템", light: "라이트", dark: "다크" },
+  noResults: "일치하는 단어가 없습니다",
+  pronunciation: "발음",
+  searchResults: "추천 단어",
+  clear: "지우기",
   pos: {
     noun: "명사",
     verb: "동사",
@@ -135,20 +145,4 @@ export function useT() {
 
 export function posLabel(t: typeof en, pos: string) {
   return t.pos[pos] ?? pos;
-}
-
-/** Preferred UI language for "/" — last explicit choice, then browser language. */
-export function detectLang(): Lang {
-  try {
-    const saved = localStorage.getItem("od.lang");
-    if (isLang(saved)) return saved;
-  } catch {}
-  const langs = typeof navigator !== "undefined" ? navigator.languages ?? [navigator.language] : [];
-  return langs.some((l) => l?.toLowerCase().startsWith("ko")) ? "ko" : DEFAULT_LANG;
-}
-
-export function rememberLang(lang: Lang) {
-  try {
-    localStorage.setItem("od.lang", lang);
-  } catch {}
 }

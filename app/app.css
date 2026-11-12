@@ -1,9 +1,49 @@
 @import "tailwindcss";
-@plugin "daisyui" {
-  themes: light --default, dark --prefersdark;
+
+/* IBM Plex, the Tinyrack typeface. Only the weights Tinyrack tokens use (400 regular, 600 medium,
+   650/700 heading/bold); Korean is split into ~100 unicode-range files so a page loads only what it shows. */
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans/latin-700.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-400.css";
+@import "@fontsource/ibm-plex-sans-kr/400.css";
+@import "@fontsource/ibm-plex-sans-kr/600.css";
+@import "@fontsource/ibm-plex-sans-kr/700.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+
+@import "@tinyrack/ui/core.css";
+@import "@tinyrack/ui/components/alert.css";
+@import "@tinyrack/ui/components/autocomplete.css";
+@import "@tinyrack/ui/components/badge.css";
+@import "@tinyrack/ui/components/button.css";
+@import "@tinyrack/ui/components/card.css";
+@import "@tinyrack/ui/components/collapsible.css";
+@import "@tinyrack/ui/components/icon-button.css";
+@import "@tinyrack/ui/components/input.css";
+@import "@tinyrack/ui/components/link.css";
+@import "@tinyrack/ui/components/link-button.css";
+@import "@tinyrack/ui/components/menu.css";
+@import "@tinyrack/ui/components/separator.css";
+@import "@tinyrack/ui/components/skeleton.css";
+@import "@tinyrack/ui/components/text.css";
+@import "@tinyrack/ui/components/toggle.css";
+@import "@tinyrack/ui/components/toggle-group.css";
+
+@source "./**/*.{ts,tsx}";
+
+/* Page frame shared by the header, main content and footer so their edges line up. */
+@utility page-frame {
+  inline-size: 100%;
+  margin-inline: auto;
+  max-inline-size: var(--tinyrack-mdx-content-width);
+  padding-inline: var(--tinyrack-space-lg);
+
+  @variant sm {
+    padding-inline: var(--tinyrack-space-xl);
+  }
 }
 
-@theme {
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
-  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Noto Serif KR", serif;
+/* Long text (definitions, examples) reads best at a limited line length. */
+@utility reading-measure {
+  max-inline-size: var(--tinyrack-mdx-content-width);
 }

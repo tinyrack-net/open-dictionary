@@ -1,4 +1,4 @@
-import { LANGS } from "./i18n";
+import { LANGS } from "./settings";
 
 /** Public origin, e.g. https://dictionary.example.com. Set VITE_SITE_URL at build time. */
 export const SITE_URL = (import.meta.env.VITE_SITE_URL ?? "").replace(/\/$/, "");

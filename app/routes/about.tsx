@@ -1,6 +1,11 @@
+import { TRBadge } from "@tinyrack/ui/components/badge";
+import { TRCard } from "@tinyrack/ui/components/card";
+import { TRLink } from "@tinyrack/ui/components/link";
+import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/about";
-import { isLang, STRINGS, useT } from "~/lib/i18n";
+import { STRINGS, useT } from "~/lib/i18n";
 import { alternates } from "~/lib/seo";
+import { isLang } from "~/lib/settings";
 
 export function meta({ params }: Route.MetaArgs) {
   const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
@@ -15,24 +20,28 @@ export default function About() {
     { name: "English Wiktionary: Korean (kaikki.org)", url: "https://kaikki.org/dictionary/Korean/", license: "CC BY-SA 4.0", use: t.aboutUse.ko },
   ];
   return (
-    <article className="py-8">
-      <h1 className="font-serif text-3xl font-semibold">{t.sourcesLicenses}</h1>
-      <p className="mt-3 text-base-content/70">{t.aboutIntro}</p>
-      <div className="mt-6 grid gap-4">
-        {sources.map((s) => (
-          <div key={s.name} className="card card-border bg-base-100">
-            <div className="card-body">
-              <h2 className="card-title">
-                <a href={s.url} className="link link-hover">
-                  {s.name}
-                </a>
-                <span className="badge badge-soft badge-sm">{s.license}</span>
-              </h2>
-              <p className="text-base-content/70">{s.use}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+    <article className="flex flex-col gap-tinyrack-lg py-tinyrack-2xl">
+      <TRText as="h1" variant="headingLg">
+        {t.sourcesLicenses}
+      </TRText>
+      <TRText as="p" color="muted" className="reading-measure">
+        {t.aboutIntro}
+      </TRText>
+      {sources.map((s) => (
+        <TRCard.Root key={s.name} variant="outlined">
+          <TRCard.Header className="flex flex-wrap items-center gap-tinyrack-sm">
+            <TRCard.Title render={<TRText as="h2" variant="headingSm" />}>
+              <TRLink href={s.url}>{s.name}</TRLink>
+            </TRCard.Title>
+            <TRBadge>{s.license}</TRBadge>
+          </TRCard.Header>
+          <TRCard.Content>
+            <TRText as="p" color="muted">
+              {s.use}
+            </TRText>
+          </TRCard.Content>
+        </TRCard.Root>
+      ))}
     </article>
   );
 }
