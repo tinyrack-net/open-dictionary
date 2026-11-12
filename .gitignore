@@ -1,0 +1,10 @@
+
+# React Router
+# generated / downloaded data
+.DS_Store
+.env
+/.react-router/
+/build/
+/data/
+/node_modules/
+/raw/
