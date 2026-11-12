@@ -27,16 +27,6 @@ export function shardOf(key: string): string {
   return (fnv1a(key) % ENTRY_SHARDS).toString(16).padStart(4, "0");
 }
 
-function charCode(ch: string): string {
-  if (/[a-z0-9]/.test(ch)) return ch;
-  return "_" + ch.codePointAt(0)!.toString(16) + "_";
-}
-
-/** Collision-free, case-insensitive-safe file name for a prefix ("run" -> "run", "사랑" -> "_c0ac__b791_"). */
-export function prefixFile(prefix: string): string {
-  return Array.from(prefix).map(charCode).join("");
-}
-
 /** Bit flags marking which dictionaries contain a headword. */
 export const DICT = {
   wn: 1, // Open English WordNet (EN-EN)

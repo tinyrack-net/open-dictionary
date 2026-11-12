@@ -8,3 +8,6 @@
 /data/
 /node_modules/
 /raw/
+/.wrangler/
+/wrangler.log
+/wrangler.err

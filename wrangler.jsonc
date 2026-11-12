@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "open-dictionary",
+  "compatibility_date": "2026-11-12",
+  // Static assets only: no Worker script, so every request is a free static asset request.
+  "assets": {
+    "directory": "./build/client",
+    // unknown paths (non-prerendered words, "/") get index.html, the React Router SPA fallback
+    "not_found_handling": "single-page-application",
+    "html_handling": "drop-trailing-slash"
+  },
+  "observability": {
+    "enabled": false
+  }
+}

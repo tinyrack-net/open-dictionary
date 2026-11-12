@@ -11,13 +11,13 @@
 //   data/site/meta.json        build stats shown on the site
 //   data/prerender.json          popular headwords to pre-render as HTML
 //
-// Run: node --max-old-space-size=24000 scripts/build-data.ts
+// Run: node --max-old-space-size=12000 scripts/build-data.ts
 
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
-import { DICT, entryKey, foldKey, prefixFile, rankScore, shardOf } from "../app/lib/keys.ts";
+import { DICT, entryKey, foldKey, rankScore, shardOf } from "../app/lib/keys.ts";
 import type {
   EnKoGroup,
   Entry,
@@ -256,64 +256,58 @@ function writeEntries() {
   console.log(`entries: ${entries.size} headwords in ${shards.size} shards, ${(bytes / 1e6).toFixed(0)} MB total, largest shard ${(max / 1e3).toFixed(0)} KB`);
 }
 
-const LEAF_MAX = 2000; // rows per index file
-const TOP_N = 60; // rows kept for a split prefix
-const MAX_DEPTH = 10;
+/**
+ * Search index: all headwords sorted by fold key and cut into fixed-size chunks.
+ *
+ *   i/manifest.json   { chunk: CHUNK, first: string[] }   first fold key of every chunk
+ *   i/<n>.json        { rows: IndexRow[], tops: { [prefix]: IndexRow[] } }
+ *
+ * A prefix with at most CHUNK matches spans at most two chunks, so the client loads them and
+ * ranks the matches itself. Larger prefixes get a precomputed top list stored in the chunk that
+ * holds their first row. This keeps the index at a few hundred files (Workers free plan: 20k files).
+ */
+const CHUNK = 2500;
+const TOP_N = 15;
+const TOP_MAX_LEN = 16;
 
 function writeIndex() {
   const dir = path.join(OUT, "i");
   rmrf(dir);
-  const rows: [string, IndexRow][] = [];
+  const rows: { f: string; cp: string[]; row: IndexRow; s: number }[] = [];
   for (const e of entries.values()) {
     const f = foldKey(e.w);
-    if (f) rows.push([f, [e.w, mask(e)]]);
+    if (!f) continue;
+    const row: IndexRow = [e.w, mask(e)];
+    rows.push({ f, cp: Array.from(f), row, s: rankScore(row) });
   }
-  rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  rows.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.row[0] < b.row[0] ? -1 : 1));
 
-  const split: string[] = [];
-  let files = 0;
-  const emit = (prefix: string, list: [string, IndexRow][]) => {
-    fs.writeFileSync(path.join(dir, `${prefixFile(prefix)}.json`), JSON.stringify(list.map((r) => r[1])));
-    files++;
-  };
-  const top = (prefix: string, list: [string, IndexRow][]) => {
-    const exact = list.filter((r) => r[0] === prefix);
-    const best = [...list].filter((r) => r[0] !== prefix).sort((a, b) => rankScore(a[1]) - rankScore(b[1])).slice(0, TOP_N);
-    return [...exact, ...best].sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  };
-
-  const visit = (prefix: string, list: [string, IndexRow][], depth: number) => {
-    if (list.length <= LEAF_MAX || depth >= MAX_DEPTH) return emit(prefix, list);
-    split.push(prefix);
-    emit(prefix, top(prefix, list));
-    const groups = new Map<string, [string, IndexRow][]>();
-    const exact: [string, IndexRow][] = [];
-    for (const r of list) {
-      const chars = Array.from(r[0]);
-      if (chars.length <= depth) {
-        exact.push(r);
-        continue;
+  const chunks = Math.ceil(rows.length / CHUNK);
+  const tops: Record<string, IndexRow[]>[] = Array.from({ length: chunks }, () => ({}));
+  let topCount = 0;
+  for (let len = 1; len <= TOP_MAX_LEN; len++) {
+    let start = 0;
+    while (start < rows.length) {
+      const prefix = rows[start].cp.length >= len ? rows[start].cp.slice(0, len).join("") : null;
+      let end = start + 1;
+      if (prefix !== null) while (end < rows.length && rows[end].f.startsWith(prefix)) end++;
+      if (prefix !== null && end - start > CHUNK) {
+        const best = rows.slice(start, end).sort((a, b) => a.s - b.s).slice(0, TOP_N).map((r) => r.row);
+        tops[Math.floor(start / CHUNK)][prefix] = best;
+        topCount++;
       }
-      const child = chars.slice(0, depth + 1).join("");
-      let g = groups.get(child);
-      if (!g) groups.set(child, (g = []));
-      g.push(r);
+      start = end;
     }
-    // rows equal to the prefix itself go into every child file so exact matches are always found
-    for (const [child, g] of groups) visit(child, exact.length ? [...exact, ...g] : g, depth + 1);
-  };
-
-  // top level: one bucket per first character, split further while large
-  const roots = new Map<string, [string, IndexRow][]>();
-  for (const r of rows) {
-    const p = Array.from(r[0])[0];
-    let g = roots.get(p);
-    if (!g) roots.set(p, (g = []));
-    g.push(r);
   }
-  for (const [p, g] of roots) visit(p, g, 1);
-  fs.writeFileSync(path.join(dir, "_split.json"), JSON.stringify(split));
-  console.log(`index: ${rows.length} rows in ${files} files, ${split.length} split prefixes`);
+
+  const first: string[] = [];
+  for (let c = 0; c < chunks; c++) {
+    const slice = rows.slice(c * CHUNK, (c + 1) * CHUNK);
+    first.push(slice[0].f);
+    fs.writeFileSync(path.join(dir, `${c}.json`), JSON.stringify({ rows: slice.map((r) => r.row), tops: tops[c] }));
+  }
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ chunk: CHUNK, first }));
+  console.log(`index: ${rows.length} rows in ${chunks} chunks, ${topCount} precomputed prefixes`);
 }
 
 function writeMeta() {
@@ -356,4 +350,4 @@ writeEntries();
 writeIndex();
 writeMeta();
 writePrerenderList();
-console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s, peak RSS ${(process.resourceUsage().maxRSS / 1024 / 1024).toFixed(1)} GB`);

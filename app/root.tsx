@@ -1,19 +1,20 @@
-import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration, useParams } from "react-router";
 import type { Route } from "./+types/root";
-import { PrefsProvider } from "./lib/prefs";
+import { DEFAULT_LANG, isLang, STRINGS } from "./lib/i18n";
 import "./app.css";
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const { lang } = useParams();
   return (
-    <html lang="en">
+    <html lang={isLang(lang) ? lang : DEFAULT_LANG}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <Meta />
         <Links />
       </head>
-      <body>
+      <body className="min-h-screen">
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -23,32 +24,35 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return (
-    <PrefsProvider>
-      <Outlet />
-    </PrefsProvider>
-  );
+  return <Outlet />;
 }
 
 export function HydrateFallback() {
-  return <div className="p-8 text-center text-stone-500">Loading…</div>;
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <span className="loading loading-dots loading-lg" aria-label="Loading" />
+    </div>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  const { lang } = useParams();
+  const l = isLang(lang) ? lang : DEFAULT_LANG;
+  const t = STRINGS[l];
   let message = "Error";
-  let details = "An unexpected error occurred.";
+  let details = String(error);
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";
-    details = error.status === 404 ? "The requested page could not be found." : error.statusText || details;
-  } else if (import.meta.env.DEV && error instanceof Error) {
-    details = error.message;
+    details = error.status === 404 ? t.pageNotFound : error.statusText || details;
+  } else if (error instanceof Error) {
+    details = import.meta.env.DEV ? error.message : "An unexpected error occurred.";
   }
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold">{message}</h1>
+      <h1 className="text-3xl font-semibold">{message}</h1>
       <p className="mt-2">{details}</p>
-      <a className="mt-4 inline-block text-blue-700 underline" href="/">
-        Back to search
+      <a className="btn mt-6" href={`/${l}`}>
+        {t.backToSearch}
       </a>
     </main>
   );

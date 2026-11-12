@@ -4,17 +4,18 @@
   "type": "module",
   "scripts": {
     "fetch-data": "node scripts/fetch-data.ts",
-    "build-data": "node --max-old-space-size=24000 scripts/build-data.ts",
+    "build-data": "node --max-old-space-size=12000 scripts/build-data.ts",
     "dev": "react-router dev",
     "build": "react-router build && node scripts/postbuild.ts",
-    "preview": "node scripts/serve.ts",
-    "typecheck": "react-router typegen && tsc"
+    "preview": "wrangler dev --port 4173",
+    "typecheck": "react-router typegen && tsc",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "isbot": "^5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router": "^8.5.1",
-    "isbot": "^5"
+    "react-router": "^8.5.1"
   },
   "devDependencies": {
     "@react-router/dev": "^8.5.1",
@@ -22,8 +23,15 @@
     "@types/node": "^22",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "daisyui": "^5.7.50",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "wrangler": "^4.160.0"
+  },
+  "packageManager": "pnpm@12.18.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
   }
 }
