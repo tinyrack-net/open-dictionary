@@ -3,8 +3,11 @@ import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/root";
 import { STRINGS } from "./lib/i18n";
+import { preloadScript } from "./lib/preload";
 import { DEFAULT_LANG, isLang, THEME_SCRIPT, useApplyTheme } from "./lib/settings";
 import "./app.css";
+
+const PRELOAD_SCRIPT = preloadScript();
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { lang } = useParams();
@@ -16,6 +19,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         {/* tinyrack-check-ignore-next-line components/no-raw-html -- trusted no-flash theme bootstrap from ?theme= */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* tinyrack-check-ignore-next-line components/no-raw-html -- trusted: starts the word page's data requests before the app loads */}
+        <script dangerouslySetInnerHTML={{ __html: PRELOAD_SCRIPT }} />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <Meta />
         <Links />

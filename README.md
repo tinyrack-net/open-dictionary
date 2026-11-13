@@ -13,10 +13,20 @@ Tailwind CSS. It is hosted on Cloudflare Workers static assets.
 | English → Korean | `en-ko` | Korean translations in English Wiktionary | CC BY-SA 4.0 |
 | Korean → English | `ko-en` | Korean entries in English Wiktionary, plus reversed translations | CC BY-SA 4.0 |
 
+Also used on the word page:
+
+| Data | Source | License |
+|---|---|---|
+| English–Korean example sentences | [Tatoeba](https://tatoeba.org/) | CC BY 2.0 FR |
+| Word frequency (★ stars, search ranking) | [wordfreq 3.1](https://github.com/rspeer/wordfreq) | CC BY-SA 4.0 |
+| Recorded pronunciations | [Wikimedia Commons](https://commons.wikimedia.org/), linked from Wiktionary | per recording (CC BY-SA / CC BY / CC0) |
+
 ## URLs
 
-Every setting is in the URL, so a link always shows exactly what was on screen. Nothing is stored in
-localStorage or cookies.
+Every setting is in the URL, so a link always shows exactly what was on screen. Settings are never stored in
+localStorage or cookies. The only things kept on the device are two personal lists, recently viewed words
+(`od.recent`, shown on the home page) and saved words (`od.saved`, the bookmark button and `/{lang}/saved`),
+in `app/lib/history.ts`.
 
 ```
 /ko/word?word=love&dicts=wordnet,en-ko&theme=dark
@@ -29,6 +39,7 @@ localStorage or cookies.
 /{lang}                 home
 /{lang}/word?word=...   entry
 /{lang}/about           sources & licenses
+/{lang}/saved           saved words (this device)
 /{lang}/word/love       old URL, redirects to /{lang}/word?word=love
 ```
 
@@ -42,8 +53,9 @@ Requires Node 22.18+ (runs `.ts` scripts directly) and pnpm.
 
 ```sh
 pnpm install
-pnpm fetch-data   # ~570 MB download into raw/
-pnpm build-data   # ~1 min, ~3 GB RAM: writes data/site
+pnpm fetch-data   # ~600 MB download into raw/ (needs curl, bunzip2, and uv for wordfreq)
+pnpm build-data   # ~1.5 min, ~3 GB RAM: writes data/site
+pnpm test         # view model checks on real words (run, ran, love, 사랑, give up) + preload script
 pnpm dev          # dev server, serves data/site at /data
 pnpm check:design # tinyrack-ui-check: Tinyrack components and tokens only (also runs in CI)
 pnpm build        # ~10 s: builds the app, copies data into build/client
@@ -65,17 +77,26 @@ data/site/
   d/en/<shard>.json        Wiktionary English entries                          (2,048 chunks)
   d/enko/<shard>.json      English → Korean translations                       (32 chunks)
   d/ko/<shard>.json        Korean → English entries + reverse translations     (128 chunks)
+  d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (32 chunks)
 ```
 
 Looking up `/en/word?word=love&dicts=en-ko`:
 
-1. Fetch the search chunk for "love". It holds the display form and a bitmask of the dictionaries that contain it.
-2. For each selected dictionary that contains the word, fetch `d/<dict>/<hash(love) % shards>.json`.
-   Dictionaries that aren't selected, or don't contain the word, cost nothing.
+1. A chunk's file name depends only on the word (`d/<dict>/<hash(love) % shards>.json`), so the index chunk
+   and every selected dictionary's chunk are requested **at the same time**. Unselected dictionaries cost nothing.
+2. The index row gives the display form, which dictionaries really contain the word, and its frequency.
 3. Turning another dictionary on fetches only that dictionary's chunk. Fetched chunks are cached.
 
-Only 6 pages are prerendered: `/{lang}`, `/{lang}/word` and `/{lang}/about` for each language. The word
-page is one HTML shell per language. Other paths (`/`, old links) get the SPA fallback `index.html`.
+On a first visit an inline `<head>` script (`app/lib/preload.ts`) starts these requests before the app's
+JavaScript has loaded; the data layer reuses them. `app/lib/preload.test.ts` checks that the script asks for
+exactly the files `getEntry` reads.
+
+The word page turns the raw entry into an answer-first view in `app/lib/view.ts` (summary line, US/UK audio,
+word forms, translations by part of speech, merged meanings with rare senses folded, homographs, bilingual
+examples, related words). `app/lib/view.test.ts` pins its behaviour on real words.
+
+Only 8 pages are prerendered: `/{lang}`, `/{lang}/word`, `/{lang}/about`, `/{lang}/saved` for each language.
+The word page is one HTML shell per language. Other paths (`/`, old links) get the SPA fallback `index.html`.
 To add a dictionary, add its id to `DICT` and `SHARDS` in `app/lib/keys.ts`, then write its chunks in
 `scripts/build-data.ts`.
 
@@ -84,7 +105,7 @@ To add a dictionary, add its id to `DICT` and `SHARDS` in `app/lib/keys.ts`, the
 `wrangler.jsonc` deploys `build/client` as static assets only. There is no Worker script, so every request is a
 free static-asset request. `not_found_handling: single-page-application` serves `index.html` for unknown paths.
 
-Free plan budget: 20,000 files per version and 25 MiB per file. The build has about 3,100 files, and
+Free plan budget: 20,000 files per version and 25 MiB per file. The build has about 3,700 files, and
 `scripts/postbuild.ts` fails the build if the limit is exceeded.
 
 GitHub Actions (`.github/workflows/deploy.yml`) builds and deploys on every push to `main`, and weekly to pick up fresh

@@ -1,7 +1,8 @@
 import { TRLink } from "@tinyrack/ui/components/link";
+import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRSeparator } from "@tinyrack/ui/components/separator";
 import { TRText } from "@tinyrack/ui/components/text";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Bookmark } from "lucide-react";
 import { data, Link, Outlet, useLocation, useParams, useSearchParams } from "react-router";
 import type { Route } from "./+types/lang";
 import { SearchBox } from "~/components/SearchBox";
@@ -40,6 +41,15 @@ export default function LangLayout() {
           <TRText as="span" className="min-w-0 flex-1">
             {!home && <SearchBox key={word} initial={word} />}
           </TRText>
+          <TRLinkButton
+            appearance="ghost"
+            aria-label={t.savedWords}
+            title={t.savedWords}
+            render={<Link to={settings.pageHref("/saved")} />}
+            className="px-tinyrack-sm"
+          >
+            <Bookmark aria-hidden="true" size={18} />
+          </TRLinkButton>
           <SettingsMenu />
         </nav>
       </header>

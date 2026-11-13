@@ -18,3 +18,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm check:design --format github
+      - run: pnpm test # data-dependent checks skip without data/site

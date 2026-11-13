@@ -7,5 +7,5 @@ const LANGS = ["en", "ko"];
 
 export default {
   ssr: false,
-  prerender: LANGS.flatMap((l) => [`/${l}`, `/${l}/word`, `/${l}/about`]),
+  prerender: LANGS.flatMap((l) => [`/${l}`, `/${l}/word`, `/${l}/about`, `/${l}/saved`]),
 } satisfies Config;

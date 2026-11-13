@@ -1,11 +1,23 @@
 // Data access in the browser. Everything is fetched lazily from /data/* in small chunks:
 //   i/manifest.json + i/<n>.json   search index (headword -> which dictionaries have it)
-//   d/<dict>/<shard>.json          one dictionary's entries for a hash range of headwords
-import { DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "./keys";
-import type { DictData, Entry, IndexRow } from "./types";
+//   d/<id>/<shard>.json            one data set's entries for a hash range of headwords
+//
+// Speed: a chunk's file name depends only on the word, so a lookup requests the index and every
+// selected dictionary chunk at the same time (one round trip, not three). On a first visit the
+// inline PRELOAD_SCRIPT starts those same requests before the app's JavaScript has even loaded,
+// and readJson reuses them.
+import { type ChunkId, DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "./keys.ts";
+import type { DictData, Entry, IndexRow } from "./types.ts";
+
+declare global {
+  interface Window {
+    /** responses the inline preload script already requested, keyed by data path */
+    __odPreload?: Record<string, Promise<Response>>;
+  }
+}
 
 async function readJson<T>(rel: string): Promise<T | null> {
-  if (import.meta.env.SSR) {
+  if (import.meta.env?.SSR) {
     // build-time prerender (home page stats): read the generated files directly
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -15,9 +27,11 @@ async function readJson<T>(rel: string): Promise<T | null> {
       return null;
     }
   }
-  const res = await fetch(`/data/${rel}`);
+  const preloaded = window.__odPreload?.[rel];
+  if (preloaded) delete window.__odPreload![rel];
+  const res = await (preloaded ?? fetch(`/data/${rel}`)).catch(() => null);
   // a missing file may come back as the SPA fallback page, so check the type too
-  if (!res.ok || !res.headers.get("content-type")?.includes("json")) return null;
+  if (!res?.ok || !res.headers.get("content-type")?.includes("json")) return null;
   return res.json();
 }
 
@@ -32,8 +46,10 @@ function cached<T>(rel: string): Promise<T | null> {
   return p;
 }
 
-async function getPart<D extends DictId>(dict: D, key: string): Promise<DictData[D] | undefined> {
-  const shard = await cached<Record<string, DictData[D]>>(`d/${dict}/${shardOf(key, SHARDS[dict])}.json`);
+const partPath = (id: ChunkId, key: string) => `d/${id}/${shardOf(key, SHARDS[id])}.json`;
+
+async function getPart<D extends ChunkId>(id: D, key: string): Promise<DictData[D] | undefined> {
+  const shard = await cached<Record<string, DictData[D]>>(partPath(id, key));
   return shard?.[key];
 }
 
@@ -58,30 +74,43 @@ export interface LoadedEntry {
   mask: number;
 }
 
+/** Sentence pairs are bilingual, so they are shown with either translation dictionary. */
+const wantsPairs = (dicts: DictId[]) => dicts.includes("enko") || dicts.includes("ko");
+
+/** Data paths a lookup will need: index + chunks for the selected dictionaries. */
+export function lookupPaths(word: string, dicts: DictId[]): string[] {
+  const key = entryKey(word);
+  const ids: ChunkId[] = [...dicts, ...(wantsPairs(dicts) ? (["ex"] as const) : [])];
+  return ["i/manifest.json", ...ids.map((id) => partPath(id, key))];
+}
+
 /**
- * Loads a headword, fetching only the chunks of the requested dictionaries that contain it.
- * Already-fetched chunks are cached, so toggling dictionaries back on costs nothing.
+ * Loads a headword. The index lookup (display form, which dictionaries have it, frequency) and
+ * the chunk of every selected dictionary are fetched in parallel; chunks of dictionaries that turn
+ * out not to contain the word are simply ignored. Fetched chunks are cached.
  */
 export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEntry | null> {
+  const key = entryKey(word);
+  const parts = {
+    wn: dicts.includes("wn") ? getPart("wn", key) : undefined,
+    en: dicts.includes("en") ? getPart("en", key) : undefined,
+    enko: dicts.includes("enko") ? getPart("enko", key) : undefined,
+    ko: dicts.includes("ko") ? getPart("ko", key) : undefined,
+    ex: wantsPairs(dicts) ? getPart("ex", key) : undefined,
+  };
   const row = await lookup(word);
   if (!row) return null;
-  const [w, mask] = row;
-  const key = entryKey(w);
-  const entry: Entry = { w };
-  await Promise.all(
-    dicts
-      .filter((d) => mask & DICT[d])
-      .map(async (d) => {
-        if (d === "ko") {
-          const part = await getPart("ko", key);
-          if (part?.ko) entry.ko = part.ko;
-          if (part?.rev) entry.koRev = part.rev;
-        } else {
-          const part = await getPart(d, key);
-          if (part) (entry as any)[d] = part;
-        }
-      }),
-  );
+  const [w, mask, f] = row;
+  const entry: Entry = { w, ...(f ? { freq: f / 10 } : {}) };
+  const [wn, en, enko, ko, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.ex]);
+  if (wn && mask & DICT.wn) entry.wn = wn;
+  if (en && mask & DICT.en) entry.en = en;
+  if (enko && mask & DICT.enko) entry.enko = enko;
+  if (ko && mask & DICT.ko) {
+    if (ko.ko) entry.ko = ko.ko;
+    if (ko.rev) entry.koRev = ko.rev;
+  }
+  if (ex) entry.pairs = ex;
   return { entry, mask };
 }
 

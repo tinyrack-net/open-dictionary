@@ -3,11 +3,14 @@
 //   raw/oewn/*.json      Open English WordNet 2025 (JSON release)
 //   raw/en.jsonl.gz      Wiktionary English entries (kaikki.org / wiktextract)
 //   raw/ko.jsonl.gz      Wiktionary Korean entries  (kaikki.org / wiktextract)
+//   raw/wordfreq.json    word frequency (wordfreq 3.1, Zipf scale)          optional
+//   raw/tatoeba/*.tsv    English–Korean sentence pairs (Tatoeba)          optional
 //
 // Output:
-//   data/site/d/<dict>/<shard>.json  per-dictionary chunks, { [entryKey]: DictData[dict] }, SHARDS[dict] files
+//   data/site/d/<id>/<shard>.json    per-data-set chunks, { [entryKey]: DictData[id] }, SHARDS[id] files
+//                                    (wn, en, enko, ko dictionaries; ex = sentence pairs)
 //   data/site/i/manifest.json        first key of each search index chunk
-//   data/site/i/<n>.json             search index chunks: headword, dictionary bitmask
+//   data/site/i/<n>.json             search index chunks: headword, dictionary bitmask, frequency
 //   data/site/meta.json              build stats shown on the site
 //
 // Run: node --max-old-space-size=8000 scripts/build-data.ts
@@ -16,10 +19,12 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
-import { DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
+import { type ChunkId, DICT, entryKey, foldKey, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
 import type {
+  Audio,
   DictData,
   EnKoGroup,
+  SentencePair,
   Entry,
   IndexRow,
   KoReverse,
@@ -121,6 +126,52 @@ function sounds(o: any) {
   return ipa.length ? ipa : undefined;
 }
 
+const COMMONS = "https://upload.wikimedia.org/wikipedia/commons/";
+/** Accent label for a recording: US / UK when known, otherwise the first tag. */
+function accent(tags: string[] = []): string | undefined {
+  if (tags.some((t) => /^(US|General-American)$/.test(t))) return "US";
+  if (tags.some((t) => /^(UK|Received-Pronunciation|Southern-England)$/.test(t))) return "UK";
+  return tags[0];
+}
+/** Up to two recordings (prefer one US + one UK), as paths under Wikimedia Commons. */
+function audio(o: any): Audio[] | undefined {
+  const all: Audio[] = (o.sounds ?? [])
+    .filter((s: any) => typeof s.mp3_url === "string" && s.mp3_url.startsWith(COMMONS))
+    .map((s: any) => ({ ...(accent(s.tags) && { tag: accent(s.tags) }), mp3: s.mp3_url.slice(COMMONS.length) }));
+  const pick: Audio[] = [];
+  for (const want of ["US", "UK"]) {
+    const a = all.find((x) => x.tag === want);
+    if (a) pick.push(a);
+  }
+  if (!pick.length && all[0]) pick.push(all[0]);
+  return pick.length ? pick : undefined;
+}
+
+/** Inflected forms worth showing (plural, past, participles, comparative); drops spelling variants. */
+const FORM_SKIP = [
+  "table-tags", "inflection-template", "romanization", "canonical", "alternative", "obsolete", "archaic",
+  "class", "hanja", "nonstandard", "colloquial", "dialectal", "rare", "second-person", "first-person",
+];
+function forms(o: any) {
+  const seen = new Set<string>();
+  const out = (o.forms ?? [])
+    .filter((f: any) => f.form && f.form !== o.word && f.form !== "-" && !f.tags?.some((t: string) => FORM_SKIP.includes(t)))
+    .filter((f: any) => !seen.has(f.form) && seen.add(f.form)) // "ran" once, not per person
+    .slice(0, 6)
+    .map((f: any) => (f.tags?.length ? { f: f.form, tags: f.tags.slice(0, 3) } : { f: f.form }));
+  return out.length ? out : undefined;
+}
+
+/** Derived words (사랑 -> 사랑하다, 사랑니), shortest/plainest first. */
+function derived(o: any) {
+  const list = [...(o.derived ?? []), ...(o.senses ?? []).flatMap((s: any) => s.derived ?? [])]
+    .filter((d: any) => d.word && d.word !== o.word && !/[()]/.test(d.word))
+    .map((d: any) => ({ w: d.word as string, ...(d.english && { en: clip(d.english, 60) }) }));
+  const seen = new Set<string>();
+  const out = list.filter((d) => !seen.has(d.w) && seen.add(d.w)).sort((a, b) => a.w.length - b.w.length).slice(0, 12);
+  return out.length ? out : undefined;
+}
+
 function senses(o: any, korean: boolean): WiktSense[] {
   const out: WiktSense[] = [];
   for (const s of o.senses ?? []) {
@@ -159,16 +210,18 @@ async function loadWiktEnglish() {
     if (!o.word || o.lang_code !== "en") continue;
     const ss = senses(o, false);
     if (!ss.length) continue;
-    const forms = (o.forms ?? [])
-      .filter((f: any) => f.form && !f.tags?.some((t: string) => ["table-tags", "inflection-template", "romanization", "canonical"].includes(t)))
-      .slice(0, 8)
-      .map((f: any) => (f.tags?.length ? { f: f.form, tags: f.tags.slice(0, 3) } : { f: f.form }));
     const we: WiktEntry = { word: o.word, pos: o.pos, senses: ss };
+    if (o.etymology_number) we.etym = Number(o.etymology_number);
     const ipa = sounds(o);
     if (ipa) we.ipa = ipa;
+    const rec = audio(o);
+    if (rec) we.audio = rec;
     const ety = etymology(o.etymology_text);
     if (ety) we.ety = ety;
-    if (forms.length) we.forms = forms;
+    const f = forms(o);
+    if (f) we.forms = f;
+    const d = derived(o);
+    if (d) we.derived = d;
     const e = entryFor(o.word);
     (e.en ??= []).push(we);
     count++;
@@ -210,10 +263,15 @@ async function loadWiktKorean() {
     const ss = senses(o, true);
     if (!ss.length) continue;
     const we: WiktEntry = { word: o.word, pos: o.pos, senses: ss };
+    if (o.etymology_number) we.etym = Number(o.etymology_number);
     const ipa = sounds(o);
     if (ipa) we.ipa = ipa.slice(0, 2);
+    const rec = audio(o);
+    if (rec) we.audio = rec;
     const ety = etymology(o.etymology_text);
     if (ety) we.ety = ety;
+    const d = derived(o);
+    if (d) we.derived = d;
     const roman = o.forms?.find((f: any) => f.tags?.includes("romanization"))?.form;
     if (roman) we.roman = roman;
     const hanja = o.forms?.find((f: any) => f.tags?.includes("hanja"))?.form;
@@ -223,6 +281,75 @@ async function loadWiktKorean() {
   }
   for (const [key, rev] of koReverse) (entries.get(key) ?? entryFor(key)).koRev = rev;
   console.log(`wiktionary ko: ${count} entries, ${koReverse.size} reverse-translated korean words`);
+}
+
+// ---------------------------------------------------------------- word frequency (wordfreq, CC BY-SA 4.0)
+function loadFrequency() {
+  const file = path.join(RAW, "wordfreq.json");
+  if (!fs.existsSync(file)) return console.log("wordfreq: skipped (raw/wordfreq.json missing)");
+  const freq: Record<"en" | "ko", Record<string, number>> = JSON.parse(fs.readFileSync(file, "utf8"));
+  let n = 0;
+  for (const [key, e] of entries) {
+    const f = (/[\uac00-\ud7af]/.test(key) ? freq.ko : freq.en)[key];
+    if (f) {
+      e.freq = f;
+      n++;
+    }
+  }
+  console.log(`wordfreq: ${n} headwords with a frequency`);
+}
+
+// ---------------------------------------------------------------- example sentence pairs (Tatoeba, CC BY 2.0 FR)
+/**
+ * English–Korean sentence pairs, attached to the headwords they contain. English words are matched
+ * by token; Korean headwords by their stem (먹다 -> 먹) at a word start, which catches 먹었다/먹어 too.
+ */
+const pairsByKey = new Map<string, SentencePair[]>();
+function loadTatoeba() {
+  const dir = path.join(RAW, "tatoeba");
+  if (!fs.existsSync(path.join(dir, "eng-kor_links.tsv"))) return console.log("tatoeba: skipped (raw/tatoeba missing)");
+  const read = (f: string) => fs.readFileSync(path.join(dir, f), "utf8").split("\n").filter(Boolean);
+  const kor = new Map(read("kor_sentences.tsv").map((l) => l.split("\t")).map(([id, , t]) => [id, t]));
+  const links = read("eng-kor_links.tsv").map((l) => l.split("\t"));
+  const engIds = new Set(links.map((l) => l[0]));
+  const eng = new Map<string, string>();
+  for (const l of read("eng_sentences.tsv")) {
+    const id = l.slice(0, l.indexOf("\t"));
+    if (engIds.has(id)) eng.set(id, l.split("\t")[2]);
+  }
+  const seen = new Set<string>();
+  const pairs: SentencePair[] = [];
+  for (const [e, k] of links) {
+    const en = eng.get(e);
+    const ko = kor.get(k);
+    if (!en || !ko || seen.has(en)) continue; // one Korean translation per English sentence
+    seen.add(en);
+    pairs.push({ en, ko });
+  }
+  // shortest sentences first so each word keeps its simplest examples
+  pairs.sort((a, b) => a.en.length - b.en.length);
+  const add = (key: string, p: SentencePair) => {
+    const list = pairsByKey.get(key) ?? [];
+    if (list.length < 5 && !list.includes(p)) list.push(p);
+    pairsByKey.set(key, list);
+  };
+  // English: every token and adjacent token pair ("give up") that is a headword
+  for (const p of pairs) {
+    const tokens = p.en.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) ?? [];
+    for (let i = 0; i < tokens.length; i++) {
+      for (const k of [tokens[i], tokens[i + 1] && `${tokens[i]} ${tokens[i + 1]}`]) if (k && entries.get(k)?.enko) add(k, p);
+    }
+  }
+  // Korean: headwords with English translations, matched by stem at a word start
+  const koHeads = [...entries.keys()].filter((k) => /^[\uac00-\ud7af]+$/.test(k) && (entries.get(k)!.ko || entries.get(k)!.koRev));
+  for (const k of koHeads) {
+    const stem = k.endsWith("다") && k.length > 1 ? k.slice(0, -1) : k;
+    if (stem.length < 1) continue;
+    const re = new RegExp(`(^|[\\s"'(])${stem}`);
+    for (const p of pairs) if (re.test(p.ko)) add(k, p);
+  }
+  for (const [key, list] of pairsByKey) entries.get(key)!.pairs = list;
+  console.log(`tatoeba: ${pairs.length} sentence pairs, attached to ${pairsByKey.size} headwords`);
 }
 
 // ---------------------------------------------------------------- output
@@ -235,17 +362,18 @@ function rmrf(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-/** The part of an entry that belongs to one dictionary, or undefined if the word isn't in it. */
-const PART: { [D in DictId]: (e: Entry) => DictData[D] | undefined } = {
+/** The part of an entry that belongs to one data set, or undefined if the word isn't in it. */
+const PART: { [D in ChunkId]: (e: Entry) => DictData[D] | undefined } = {
   wn: (e) => e.wn,
   en: (e) => e.en,
   enko: (e) => e.enko,
   ko: (e) => (e.ko || e.koRev ? { ...(e.ko && { ko: e.ko }), ...(e.koRev && { rev: e.koRev }) } : undefined),
+  ex: (e) => e.pairs,
 };
 
 function writeEntries() {
   rmrf(path.join(OUT, "e")); // pre-split layout
-  for (const dict of Object.keys(SHARDS) as DictId[]) {
+  for (const dict of Object.keys(SHARDS) as ChunkId[]) {
     const dir = path.join(OUT, "d", dict);
     rmrf(dir);
     const shards = new Map<string, Record<string, unknown>>();
@@ -294,7 +422,7 @@ function writeIndex() {
   for (const e of entries.values()) {
     const f = foldKey(e.w);
     if (!f) continue;
-    const row: IndexRow = [e.w, mask(e)];
+    const row: IndexRow = e.freq ? [e.w, mask(e), Math.round(e.freq * 10)] : [e.w, mask(e)];
     rows.push({ f, cp: Array.from(f), row, s: rankScore(row) });
   }
   rows.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.row[0] < b.row[0] ? -1 : 1));
@@ -343,6 +471,8 @@ const t0 = Date.now();
 loadWordNet();
 await loadWiktEnglish();
 await loadWiktKorean();
+loadFrequency();
+loadTatoeba();
 writeEntries();
 writeIndex();
 writeMeta();

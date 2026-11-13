@@ -35,15 +35,20 @@ export const DICT = {
 } as const;
 export type DictId = keyof typeof DICT;
 
+/** Chunked data sets: the four dictionaries plus bilingual example sentences ("ex"). */
+export type ChunkId = DictId | "ex";
+
 /**
- * Number of chunk files per dictionary (data/site/d/<dict>/<shard>.json).
+ * Number of chunk files per data set (data/site/d/<id>/<shard>.json).
  * Sized so one chunk is roughly 150-200 KB raw / ~40 KB compressed.
  */
-export const SHARDS: Record<DictId, number> = { wn: 256, en: 2048, enko: 32, ko: 128 };
+export const SHARDS: Record<ChunkId, number> = { wn: 256, en: 2048, enko: 32, ko: 128, ex: 32 };
 
-/** Ranking for prefix matches: lower is better (well-covered, short, plain words first). */
-export function rankScore([w, m]: [string, number]): number {
+/** Ranking for prefix matches: lower is better (common, well-covered, short, plain words first). */
+export function rankScore([w, m, f]: [string, number, number?]): number {
   let s = Array.from(w).length;
+  // Zipf x10: "love" 58 -> -29, a rare word 25 -> -12
+  if (f) s -= f / 2;
   if (m & DICT.wn) s -= 20;
   if (m & DICT.ko) s -= 15;
   if (m & DICT.enko) s -= 5;

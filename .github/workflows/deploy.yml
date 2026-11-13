@@ -35,6 +35,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: astral-sh/setup-uv@v10 # wordfreq export in fetch-data
 
       - name: Week number (raw data cache key)
         id: week
@@ -46,6 +47,7 @@ jobs:
 
       - run: pnpm fetch-data
       - run: pnpm build-data
+      - run: pnpm test # view model checks on the freshly built data
       - run: pnpm build
 
       - name: Deploy to Cloudflare Workers

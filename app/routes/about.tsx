@@ -18,6 +18,9 @@ export default function About() {
     { name: "Open English WordNet 2025", url: "https://en-word.net/", license: "CC BY 4.0", use: t.aboutUse.wn },
     { name: "English Wiktionary (kaikki.org)", url: "https://kaikki.org/dictionary/English/", license: "CC BY-SA 4.0", use: t.aboutUse.en },
     { name: "English Wiktionary: Korean (kaikki.org)", url: "https://kaikki.org/dictionary/Korean/", license: "CC BY-SA 4.0", use: t.aboutUse.ko },
+    { name: "Tatoeba", url: "https://tatoeba.org/", license: "CC BY 2.0 FR", use: t.aboutUse.tatoeba },
+    { name: "wordfreq 3.1 (Robyn Speer)", url: "https://github.com/rspeer/wordfreq", license: "CC BY-SA 4.0", use: t.aboutUse.wordfreq },
+    { name: "Wikimedia Commons", url: "https://commons.wikimedia.org/", license: "CC BY-SA / CC BY / CC0", use: t.aboutUse.commons },
   ];
   return (
     <article className="flex flex-col gap-tinyrack-lg py-tinyrack-2xl">

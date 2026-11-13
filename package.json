@@ -10,7 +10,8 @@
     "preview": "wrangler dev --port 4173",
     "typecheck": "react-router typegen && tsc",
     "deploy": "wrangler deploy",
-    "check:design": "tinyrack-ui-check"
+    "check:design": "tinyrack-ui-check",
+    "test": "node --test app/lib/*.test.ts"
   },
   "dependencies": {
     "@tinyrack/ui": "0.35.1",

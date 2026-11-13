@@ -6,7 +6,8 @@
 //    │             └ word:   the headword (word page only)
 //    └ lang:   UI language (path segment, so prerendered HTML is already in the right language)
 //
-// Nothing is stored in localStorage or cookies.
+// Settings are never stored in localStorage or cookies. (Personal lists, i.e. search history and
+// saved words, are kept on the device: see history.ts.)
 import {
   applyTinyrackColorScheme,
   isTinyrackColorSchemePreference,
@@ -15,41 +16,18 @@ import {
 } from "@tinyrack/ui/providers/color-scheme";
 import { useEffect, useSyncExternalStore } from "react";
 import { type Location, useLocation, useNavigate, useNavigation, useParams } from "react-router";
-import { DICT, type DictId } from "./keys";
+import { ALL_DICTS, DEFAULT_LANG, isLang, type Lang, parseDicts, slugOf } from "./dicts.ts";
+import type { DictId } from "./keys.ts";
+
+export { ALL_DICTS, DEFAULT_LANG, DICTIONARIES, dictMask, isLang, LANGS, type Lang, parseDicts } from "./dicts.ts";
 
 // ---------------------------------------------------------------- UI language
-
-export const LANGS = ["en", "ko"] as const;
-export type Lang = (typeof LANGS)[number];
-export const DEFAULT_LANG: Lang = "en";
-export const isLang = (v: unknown): v is Lang => LANGS.includes(v as Lang);
 
 /** Browser language, used only to pick a UI language for "/". */
 export function browserLang(): Lang {
   const langs = typeof navigator !== "undefined" ? (navigator.languages ?? [navigator.language]) : [];
   return langs.some((l) => l?.toLowerCase().startsWith("ko")) ? "ko" : DEFAULT_LANG;
 }
-
-// ---------------------------------------------------------------- dictionaries
-
-export const DICTIONARIES: { id: DictId; slug: string; short: string; source: string; license: string }[] = [
-  { id: "wn", slug: "wordnet", short: "WN", source: "Open English WordNet 2025", license: "CC BY 4.0" },
-  { id: "en", slug: "wiktionary", short: "WK", source: "English Wiktionary · kaikki.org", license: "CC BY-SA 4.0" },
-  { id: "enko", slug: "en-ko", short: "EN→KO", source: "English Wiktionary · kaikki.org", license: "CC BY-SA 4.0" },
-  { id: "ko", slug: "ko-en", short: "KO→EN", source: "English Wiktionary · kaikki.org", license: "CC BY-SA 4.0" },
-];
-export const ALL_DICTS: DictId[] = DICTIONARIES.map((d) => d.id);
-const bySlug = new Map(DICTIONARIES.map((d) => [d.slug, d.id]));
-const slugOf = new Map(DICTIONARIES.map((d) => [d.id, d.slug]));
-
-/** null (param absent) means every dictionary. */
-export function parseDicts(value: string | null): DictId[] {
-  if (value === null) return ALL_DICTS;
-  const picked = new Set(value.split(",").map((s) => bySlug.get(s.trim())));
-  return ALL_DICTS.filter((d) => picked.has(d));
-}
-
-export const dictMask = (ids: DictId[]) => ids.reduce((m, d) => m | DICT[d], 0);
 
 // ---------------------------------------------------------------- theme
 

@@ -10,5 +10,7 @@ export default [
     // links from the first release: /{lang}/word/<headword> -> /{lang}/word?word=<headword>
     route("word/:word", "routes/legacy-word.tsx"),
     route("about", "routes/about.tsx"),
+    // saved words: personal list kept in this browser (localStorage)
+    route("saved", "routes/saved.tsx"),
   ]),
 ] satisfies RouteConfig;

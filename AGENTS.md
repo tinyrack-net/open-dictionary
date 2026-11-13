@@ -15,10 +15,16 @@
 
 ## Settings
 - Every user setting lives in the URL: UI language in the path, `word`, `dicts`, `theme` in the query.
-  Never use localStorage/cookies. Read/write settings only through `useSettings()` in `app/lib/settings.ts`
+  Never store settings in localStorage/cookies. The only device storage is the two personal lists in
+  `app/lib/history.ts` (recent and saved words). Read/write settings only through `useSettings()` in `app/lib/settings.ts`
   and build links with its `wordHref`/`pageHref`/`langHref` so settings carry over.
 - Prerendered HTML can't see the query string: URL-dependent UI must render defaults until `useHydrated()`.
 
+## Word page
+- `app/lib/view.ts` decides what the word page shows (answer first: summary, translations, meanings, examples).
+  Keep it pure and extend `app/lib/view.test.ts` with the real word that motivated a change.
+- `app/lib/preload.ts` mirrors the data paths of `data.ts` in plain JavaScript; `preload.test.ts` must stay green.
+
 ## Commands
-- `pnpm typecheck`, `pnpm check:design`, `pnpm build` (needs `data/site` from `pnpm fetch-data && pnpm build-data`).
+- `pnpm typecheck`, `pnpm check:design`, `pnpm test`, `pnpm build` (needs `data/site` from `pnpm fetch-data && pnpm build-data`).
 - `pnpm preview` serves `build/client` with wrangler; restart it after every build.

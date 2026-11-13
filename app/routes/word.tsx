@@ -1,15 +1,20 @@
 import { TRAccordion } from "@tinyrack/ui/components/accordion";
 import { TRAlert } from "@tinyrack/ui/components/alert";
 import { TRBadge } from "@tinyrack/ui/components/badge";
+import { TRButton } from "@tinyrack/ui/components/button";
 import { TRCollapsible } from "@tinyrack/ui/components/collapsible";
 import { TRLink } from "@tinyrack/ui/components/link";
 import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRSeparator } from "@tinyrack/ui/components/separator";
 import { TRSkeleton } from "@tinyrack/ui/components/skeleton";
 import { TRText } from "@tinyrack/ui/components/text";
+import { useEffect, useMemo, useState } from "react";
 import { Link, type ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/word";
+import { AudioButton } from "~/components/AudioButton";
+import { SaveButton } from "~/components/SaveButton";
 import { getEntry, search } from "~/lib/data";
+import { addRecent } from "~/lib/history";
 import { posShort, STRINGS, useT } from "~/lib/i18n";
 import { DICT } from "~/lib/keys";
 import { DICTIONARIES, isLang, parseDicts, useSettings } from "~/lib/settings";
@@ -52,19 +57,30 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
   const settings = useSettings();
   const t = useT();
 
-  if (!loaded) return <NotFound word={word} suggestions={suggestions} />;
-
   // Only what the selected dictionaries provide; the loader skipped the others' chunks.
-  const entry = { ...loaded.entry };
-  for (const d of DICTIONARIES) if (!settings.dicts.includes(d.id)) delete (entry as Record<string, unknown>)[d.id === "ko" ? "ko" : d.id];
-  if (!settings.dicts.includes("ko")) delete entry.koRev;
-  const view = buildView(entry);
+  const view = useMemo(() => {
+    if (!loaded) return null;
+    const entry = { ...loaded.entry };
+    for (const d of DICTIONARIES) if (!settings.dicts.includes(d.id)) delete (entry as Record<string, unknown>)[d.id];
+    if (!settings.dicts.includes("ko")) delete entry.koRev;
+    if (!settings.dicts.includes("enko") && !settings.dicts.includes("ko")) delete entry.pairs;
+    return buildView(entry);
+  }, [loaded, settings.dicts]);
+  const gloss = view?.summary.slice(0, 3).join(", ") || view?.meanings[0]?.items[0]?.text;
+
+  // recently viewed (this device only)
+  useEffect(() => {
+    if (view) addRecent(view.word, gloss);
+  }, [view?.word]);
+
+  if (!loaded || !view) return <NotFound word={word} suggestions={suggestions} />;
+
   const available = DICTIONARIES.filter((d) => loaded.mask & DICT[d.id]);
-  const empty = !view.translations.length && !view.meanings.length && !view.more.length && !view.formOf.length;
+  const empty = !view.translations.length && !view.meanings.length && !view.more.length && !view.formOf.length && !view.homographs;
 
   return (
     <article className="mx-auto flex max-w-tinyrack-mdx-content-width flex-col gap-tinyrack-xl py-tinyrack-xl sm:py-tinyrack-2xl">
-      <Head view={view} />
+      <Head view={view} gloss={gloss} />
 
       {empty ? (
         <TRAlert.Root variant="info">
@@ -80,15 +96,26 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
               <Translations groups={view.translations} korean={view.korean} />
             </Section>
           )}
-          {(view.meanings.length > 0 || view.more.length > 0) && (
-            <Section title={view.korean ? t.englishSection : t.meaningsSection}>
-              {/* an inflected form ("ran") answers with its base word; its own leftovers stay folded */}
-              <Meanings groups={view.meanings} more={view.more} folded={view.formOf.length > 0} />
+          {view.homographs ? (
+            <Section title={t.explainedSection}>
+              <Homographs view={view} />
             </Section>
+          ) : (
+            (view.meanings.length > 0 || view.more.length > 0) && (
+              <Section title={view.korean ? t.explainedSection : t.meaningsSection}>
+                {/* an inflected form ("ran") answers with its base word; its own leftovers stay folded */}
+                <Meanings groups={view.meanings} more={view.more} folded={view.formOf.length > 0} />
+              </Section>
+            )
           )}
           {view.examples.length > 0 && (
             <Section title={t.examplesSection}>
               <Examples items={view.examples} />
+            </Section>
+          )}
+          {view.related.length > 0 && (
+            <Section title={t.related}>
+              <RelatedWords items={view.related} />
             </Section>
           )}
           {view.etymology && (
@@ -110,19 +137,42 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
 
 // ---------------------------------------------------------------- sections
 
-function Head({ view }: { view: WordView }) {
+/** Headword, the answer in one line, then how to say it and how it changes. */
+function Head({ view, gloss }: { view: WordView; gloss?: string }) {
   const t = useT();
   return (
-    <header className="flex flex-wrap items-baseline gap-x-tinyrack-lg gap-y-tinyrack-xs">
-      <TRText as="h1" variant="display" lang={view.korean ? "ko" : "en"} className="break-words">
-        {view.word}
+    <header className="flex flex-col gap-tinyrack-sm">
+      <TRText as="span" className="flex items-start justify-between gap-tinyrack-md">
+        <TRText as="span" className="flex min-w-0 flex-wrap items-baseline gap-x-tinyrack-md">
+          <TRText as="h1" variant="display" lang={view.korean ? "ko" : "en"} className="break-words">
+            {view.word}
+          </TRText>
+          {view.stars && (
+            <TRText variant="bodySm" color="warning" aria-label={t.frequency[view.stars]} title={t.frequency[view.stars]}>
+              {"★".repeat(view.stars)}
+              <TRText color="placeholder">{"★".repeat(3 - view.stars)}</TRText>
+            </TRText>
+          )}
+        </TRText>
+        <SaveButton word={view.word} gloss={gloss} />
       </TRText>
-      <TRText as="p" color="muted" aria-label={t.pronunciation} className="flex flex-wrap items-baseline gap-x-tinyrack-md">
+
+      {view.summary.length > 0 && (
+        <TRText as="p" variant="headingSm" weight="regular" lang={view.korean ? "en" : "ko"} className="flex flex-wrap gap-x-tinyrack-md gap-y-tinyrack-2xs">
+          {view.summary.map((w, i) => (
+            <TRText key={w}>
+              <TRText color="muted">{i + 1}.</TRText> {w}
+            </TRText>
+          ))}
+        </TRText>
+      )}
+
+      <TRText as="p" color="muted" aria-label={t.pronunciation} className="flex flex-wrap items-center gap-x-tinyrack-lg gap-y-tinyrack-xs">
         {view.hanja && <TRText lang="ko">{view.hanja}</TRText>}
         {view.roman && <TRText as="i">{view.roman}</TRText>}
         {view.pron?.map((p) => (
-          <TRText key={p.value + p.tag} className="flex items-baseline gap-tinyrack-2xs">
-            {p.tag && (
+          <TRText key={p.value + p.tag} className="flex items-center gap-tinyrack-2xs">
+            {p.tag && !view.audio?.some((a) => a.tag === p.tag) && (
               <TRText variant="caption" color="muted">
                 {p.tag}
               </TRText>
@@ -130,8 +180,31 @@ function Head({ view }: { view: WordView }) {
             <TRText variant="code">{p.value}</TRText>
           </TRText>
         ))}
+        {view.audio?.map((a) => (
+          <AudioButton key={a.mp3} audio={a} />
+        ))}
       </TRText>
+
+      {view.forms && <Forms forms={view.forms} />}
     </header>
+  );
+}
+
+function Forms({ forms }: { forms: { form: string; label: string }[] }) {
+  const t = useT();
+  const settings = useSettings();
+  return (
+    <TRText as="p" variant="bodySm" className="flex flex-wrap items-baseline gap-x-tinyrack-md gap-y-tinyrack-2xs">
+      <TRText color="muted">{t.forms}</TRText>
+      {forms.map((f) => (
+        <TRText key={f.form}>
+          {f.label && <TRText color="muted">{t.formLabels[f.label] ?? f.label} </TRText>}
+          <TRLink render={<Link to={settings.wordHref(f.form)} />} underline="hover">
+            {f.form}
+          </TRLink>
+        </TRText>
+      ))}
+    </TRText>
   );
 }
 
@@ -150,7 +223,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function PosLabel({ pos }: { pos: string }) {
   const t = useT();
   return (
-    <TRText variant="bodySm" color="muted" weight="medium" className="w-tinyrack-3xl shrink-0">
+    <TRText variant="bodySm" color="muted" weight="medium" className="w-tinyrack-xl shrink-0 sm:w-tinyrack-3xl">
       {posShort(t, pos)}
     </TRText>
   );
@@ -170,7 +243,7 @@ function FormOf({ view }: { view: WordView }) {
             {f.word}
           </TRLink>{" "}
           <TRText variant="bodySm" color="muted">
-            ({f.label})
+            ({t.formLabels[f.label] ?? f.label})
           </TRText>
         </TRText>
       ))}
@@ -178,34 +251,100 @@ function FormOf({ view }: { view: WordView }) {
   );
 }
 
+const TRANSLATIONS_PER_POS = 5;
+
+/** Translations by part of speech; long lists ("run": 17 verbs) show the first five with a toggle. */
 function Translations({ groups, korean }: { groups: PosGroup<Translation>[]; korean: boolean }) {
-  const settings = useSettings();
   return (
     <dl className="flex flex-col gap-tinyrack-sm">
       {groups.map((g) => (
-        <TRText as="span" key={g.pos} className="flex items-baseline gap-tinyrack-md">
-          <TRText as="dt">
-            <PosLabel pos={g.pos} />
-          </TRText>
-          <TRText as="dd" lang={korean ? "en" : "ko"} className="flex flex-wrap items-baseline gap-x-tinyrack-xs gap-y-tinyrack-2xs">
-            {g.items.map((tr, i) => (
-              <TRText key={tr.word} variant="headingSm" weight="regular">
-                <TRLink render={<Link to={settings.wordHref(tr.word)} />} underline="hover">
-                  {tr.word}
-                </TRLink>
-                {tr.note && (
-                  <TRText variant="bodySm" color="muted">
-                    {" "}
-                    {tr.note}
-                  </TRText>
-                )}
-                {i < g.items.length - 1 && <TRText color="muted">,</TRText>}
-              </TRText>
-            ))}
-          </TRText>
-        </TRText>
+        <TranslationRow key={g.pos} group={g} korean={korean} />
       ))}
     </dl>
+  );
+}
+
+function TranslationRow({ group: g, korean }: { group: PosGroup<Translation>; korean: boolean }) {
+  const t = useT();
+  const settings = useSettings();
+  const [all, setAll] = useState(false);
+  const items = all ? g.items : g.items.slice(0, TRANSLATIONS_PER_POS);
+  const hidden = g.items.length - items.length;
+  return (
+    <TRText as="span" className="flex items-baseline gap-tinyrack-md">
+      <TRText as="dt">
+        <PosLabel pos={g.pos} />
+      </TRText>
+      <TRText as="dd" lang={korean ? "en" : "ko"} className="flex flex-wrap items-baseline gap-x-tinyrack-xs gap-y-tinyrack-2xs">
+        {items.map((tr, i) => (
+          <TRText key={tr.word} variant="headingSm" weight="regular">
+            <TRLink render={<Link to={settings.wordHref(tr.word)} />} underline="hover">
+              {tr.word}
+            </TRLink>
+            {tr.note && (
+              <TRText variant="bodySm" color="muted">
+                {" "}
+                {tr.note}
+              </TRText>
+            )}
+            {(i < items.length - 1 || hidden > 0) && <TRText color="muted">,</TRText>}
+          </TRText>
+        ))}
+        {hidden > 0 && (
+          <TRButton appearance="ghost" uiSize="sm" onClick={() => setAll(true)} className="self-center">
+            {t.showAll(g.items.length)}
+          </TRButton>
+        )}
+      </TRText>
+    </TRText>
+  );
+}
+
+/** Korean words with several unrelated meanings: numbered blocks (사랑¹ love, 사랑² 舍廊). */
+function Homographs({ view }: { view: WordView }) {
+  return (
+    <TRText as="span" className="flex flex-col gap-tinyrack-lg">
+      {view.homographs!.map((h) => (
+        <section key={h.n} className="flex flex-col gap-tinyrack-xs">
+          <TRText as="h3" variant="headingSm" lang="ko">
+            {view.word}
+            <TRText as="sup" variant="caption" color="muted">
+              {h.n}
+            </TRText>
+            {h.hanja && (
+              <TRText variant="body" color="muted" weight="regular">
+                {" "}
+                {h.hanja}
+              </TRText>
+            )}
+          </TRText>
+          {h.meanings.length > 0 && <MeaningList groups={h.meanings} />}
+        </section>
+      ))}
+    </TRText>
+  );
+}
+
+function RelatedWords({ items }: { items: { word: string; note?: string }[] }) {
+  const settings = useSettings();
+  return (
+    <ul className="flex flex-wrap gap-x-tinyrack-lg gap-y-tinyrack-xs">
+      {items.map((r) => (
+        <li key={r.word}>
+          <TRText>
+            <TRLink render={<Link to={settings.wordHref(r.word)} />} underline="hover">
+              {r.word}
+            </TRLink>
+            {r.note && (
+              <TRText variant="bodySm" color="muted">
+                {" "}
+                {r.note}
+              </TRText>
+            )}
+          </TRText>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -248,9 +387,9 @@ function MeaningRow({ pos, n, line, value }: { pos?: string; n: number; line: Li
   const t = useT();
   const hasDetail = !!(line.examples?.length || line.synonyms?.length || line.broader?.length);
   const label = (
-    <TRText as="span" className="flex min-w-0 flex-1 items-baseline gap-tinyrack-md text-left">
-      {pos ? <PosLabel pos={pos} /> : <TRText as="span" className="w-tinyrack-3xl shrink-0" aria-hidden="true" />}
-      <TRText variant="bodySm" color="muted" className="tabular-nums">
+    <TRText as="span" className="flex min-w-0 flex-1 items-baseline gap-tinyrack-sm text-left sm:gap-tinyrack-md">
+      {pos ? <PosLabel pos={pos} /> : <TRText as="span" className="w-tinyrack-xl shrink-0 sm:w-tinyrack-3xl" aria-hidden="true" />}
+      <TRText variant="bodySm" color="muted" className="w-tinyrack-lg shrink-0 text-right tabular-nums">
         {n}
       </TRText>
       <TRText className="min-w-0 flex-1" weight="regular">
@@ -265,7 +404,7 @@ function MeaningRow({ pos, n, line, value }: { pos?: string; n: number; line: Li
   );
   if (!hasDetail)
     return (
-      <TRText as="span" className="flex py-tinyrack-sm pl-tinyrack-lg pr-tinyrack-3xl">
+      <TRText as="span" className="flex py-tinyrack-sm pl-tinyrack-md pr-tinyrack-2xl sm:pl-tinyrack-lg sm:pr-tinyrack-3xl">
         {label}
       </TRText>
     );
@@ -275,7 +414,7 @@ function MeaningRow({ pos, n, line, value }: { pos?: string; n: number; line: Li
         <TRAccordion.Trigger className="min-h-0 py-tinyrack-sm">{label}</TRAccordion.Trigger>
       </TRAccordion.Header>
       <TRAccordion.Panel>
-        <TRText as="span" className="flex flex-col gap-tinyrack-sm pl-tinyrack-3xl">
+        <TRText as="span" className="flex flex-col gap-tinyrack-sm sm:pl-tinyrack-3xl">
           {line.examples?.map((x) => (
             <Example key={x.text} text={x.text} sub={x.sub} />
           ))}
