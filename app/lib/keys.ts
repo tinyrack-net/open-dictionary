@@ -26,6 +26,11 @@ export function shardOf(key: string, shards: number): string {
   return (fnv1a(key) % shards).toString(16).padStart(Math.max(1, (shards - 1).toString(16).length), "0");
 }
 
+/** File name for a headword stored in its own file (too large for a shared chunk). ASCII-safe. */
+export function ownFileName(key: string): string {
+  return fnv1a(key).toString(16).padStart(8, "0") + "-" + fnv1a(key + "\u0000").toString(16).padStart(8, "0");
+}
+
 /** Bit flags marking which dictionaries contain a headword. */
 export const DICT = {
   wn: 1, // Open English WordNet (EN-EN)
@@ -40,9 +45,9 @@ export type ChunkId = DictId | "ex";
 
 /**
  * Number of chunk files per data set (data/site/d/<id>/<shard>.json).
- * Sized so one chunk is roughly 150-200 KB raw / ~40 KB compressed.
+ * Sized so one chunk is ~200 KB raw / ~50 KB compressed with the complete (uncapped) data.
  */
-export const SHARDS: Record<ChunkId, number> = { wn: 256, en: 2048, enko: 32, ko: 128, ex: 32 };
+export const SHARDS: Record<ChunkId, number> = { wn: 256, en: 4096, enko: 32, ko: 256, ex: 64 };
 
 /** Ranking for prefix matches: lower is better (common, well-covered, short, plain words first). */
 export function rankScore([w, m, f]: [string, number, number?]): number {

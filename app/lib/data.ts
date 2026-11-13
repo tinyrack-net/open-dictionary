@@ -48,9 +48,14 @@ function cached<T>(rel: string): Promise<T | null> {
 
 const partPath = (id: ChunkId, key: string) => `d/${id}/${shardOf(key, SHARDS[id])}.json`;
 
+/** A headword's data, or a pointer to its own file when it was too large for a shared chunk. */
+type Stored<T> = T | { $file: string };
+
 async function getPart<D extends ChunkId>(id: D, key: string): Promise<DictData[D] | undefined> {
-  const shard = await cached<Record<string, DictData[D]>>(partPath(id, key));
-  return shard?.[key];
+  const shard = await cached<Record<string, Stored<DictData[D]>>>(partPath(id, key));
+  const v = shard?.[key];
+  if (v && typeof v === "object" && "$file" in v) return (await cached<DictData[D]>(`d/${id}/x/${v.$file}.json`)) ?? undefined;
+  return v as DictData[D] | undefined;
 }
 
 /** Index row whose key equals the word, if the headword exists. */
@@ -100,15 +105,15 @@ export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEnt
   };
   const row = await lookup(word);
   if (!row) return null;
-  const [w, mask, f] = row;
-  const entry: Entry = { w, ...(f ? { freq: f / 10 } : {}) };
+  const [w, mask] = row;
+  const entry: Entry = { w };
   const [wn, en, enko, ko, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.ex]);
   if (wn && mask & DICT.wn) entry.wn = wn;
   if (en && mask & DICT.en) entry.en = en;
   if (enko && mask & DICT.enko) entry.enko = enko;
   if (ko && mask & DICT.ko) {
-    if (ko.ko) entry.ko = ko.ko;
-    if (ko.rev) entry.koRev = ko.rev;
+    if (ko.entries) entry.ko = ko.entries;
+    if (ko.backlinks) entry.koBacklinks = ko.backlinks;
   }
   if (ex) entry.pairs = ex;
   return { entry, mask };

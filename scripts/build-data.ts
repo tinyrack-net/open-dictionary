@@ -3,15 +3,17 @@
 //   raw/oewn/*.json      Open English WordNet 2025 (JSON release)
 //   raw/en.jsonl.gz      Wiktionary English entries (kaikki.org / wiktextract)
 //   raw/ko.jsonl.gz      Wiktionary Korean entries  (kaikki.org / wiktextract)
-//   raw/wordfreq.json    word frequency (wordfreq 3.1, Zipf scale)          optional
+//   raw/wordfreq.json    word frequency (wordfreq 3.1, Zipf scale)        optional, search ranking only
 //   raw/tatoeba/*.tsv    English–Korean sentence pairs (Tatoeba)          optional
 //
 // Output:
-//   data/site/d/<id>/<shard>.json    per-data-set chunks, { [entryKey]: DictData[id] }, SHARDS[id] files
-//                                    (wn, en, enko, ko dictionaries; ex = sentence pairs)
+//   data/site/d/<id>/<shard>.json    per-source chunks, { [entryKey]: DictData[id] }, SHARDS[id] files
 //   data/site/i/manifest.json        first key of each search index chunk
 //   data/site/i/<n>.json             search index chunks: headword, dictionary bitmask, frequency
-//   data/site/meta.json              build stats shown on the site
+//   data/site/meta.json              build stats
+//
+// Every converter turns its source into the neutral format of app/lib/types.ts and follows its rules:
+// copy, don't compose; keep the source's order and tags; keep everything; omit empty fields.
 //
 // Run: node --max-old-space-size=8000 scripts/build-data.ts
 
@@ -19,18 +21,23 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
-import { type ChunkId, DICT, entryKey, foldKey, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
+import { type ChunkId, DICT, entryKey, foldKey, ownFileName, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
 import type {
   Audio,
+  Backlink,
   DictData,
-  EnKoGroup,
-  SentencePair,
-  Entry,
+  DictEntry,
+  Example,
+  Form,
+  FormTable,
   IndexRow,
-  KoReverse,
-  WiktEntry,
-  WiktSense,
-  WnEntry,
+  Pron,
+  Relations,
+  RelationKind,
+  Sense,
+  SentencePair,
+  Translation,
+  WordRef,
 } from "../app/lib/types.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -38,8 +45,20 @@ const RAW = path.join(ROOT, "raw");
 const OUT = path.join(ROOT, "data", "site");
 const LIMIT = Number(process.env.LIMIT ?? Infinity); // lines per Wiktionary file (dev)
 
-const entries = new Map<string, Entry>();
-function entryFor(display: string): Entry {
+/** Everything collected for one headword key, per source. */
+interface Collected {
+  w: string;
+  freq?: number;
+  wn?: DictEntry[];
+  en?: DictEntry[];
+  enko?: DictEntry[];
+  ko?: DictEntry[];
+  koBacklinks?: Backlink[];
+  pairs?: SentencePair[];
+}
+
+const entries = new Map<string, Collected>();
+function entryFor(display: string): Collected {
   const key = entryKey(display);
   let e = entries.get(key);
   if (!e) {
@@ -49,44 +68,58 @@ function entryFor(display: string): Entry {
   return e;
 }
 
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
-const uniq = <T>(xs: T[]) => [...new Set(xs)];
+/** Drops undefined values and empty arrays/objects so the stored JSON stays lean. */
+function compact<T extends object>(o: T): T {
+  for (const [k, v] of Object.entries(o)) {
+    if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0) || (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0))
+      delete (o as Record<string, unknown>)[k];
+  }
+  return o;
+}
+const strs = (xs: unknown): string[] | undefined => (Array.isArray(xs) ? xs.filter((x): x is string => typeof x === "string" && x !== "") : undefined);
 
-// ---------------------------------------------------------------- WordNet
+// ---------------------------------------------------------------- Open English WordNet
+/**
+ * WordNet entries are lemma × part of speech; each sense is a synset. Copied fields: definition,
+ * examples, the synset's other members (synonyms) and its hypernyms' members, all in source order.
+ */
 function loadWordNet() {
   const dir = path.join(RAW, "oewn");
   const synsets: Record<string, any> = {};
   for (const f of fs.readdirSync(dir)) {
     if (/^(noun|verb|adj|adv)\./.test(f)) Object.assign(synsets, JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")));
   }
+  // WordNet's own part-of-speech codes, spelled out (n, v, a, s = satellite adjective, r)
   const POS: Record<string, string> = { n: "noun", v: "verb", a: "adjective", s: "adjective", r: "adverb" };
   let count = 0;
   for (const f of fs.readdirSync(dir).filter((f) => f.startsWith("entries-"))) {
     const data = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
     for (const [lemma, byPos] of Object.entries<any>(data)) {
       const e = entryFor(lemma);
-      if (e.wn === undefined && /^[a-z]/.test(lemma)) e.w = lemma; // prefer lowercase display
+      if (!e.wn && /^[a-z]/.test(lemma)) e.w = lemma; // display the lowercase spelling when there is one
       for (const [posKey, info] of Object.entries<any>(byPos)) {
-        const wn: WnEntry = {
-          lemma,
-          pos: POS[posKey[0]] ?? posKey,
-          pron: info.pronunciation?.map((p: any) => (p.variety ? { v: p.value, var: p.variety } : { v: p.value })),
-          senses: [],
-        };
+        const senses: Sense[] = [];
         for (const s of info.sense ?? []) {
           const ss = synsets[s.synset];
           if (!ss) continue;
-          const syn = (ss.members as string[]).filter((m) => m !== lemma).slice(0, 8);
-          const broader = uniq((ss.hypernym ?? []).flatMap((h: string) => synsets[h]?.members?.slice(0, 2) ?? [])).slice(0, 4) as string[];
-          const ex = (ss.example ?? []).map((x: any) => (typeof x === "string" ? x : x.text)).slice(0, 3);
-          wn.senses.push({
-            def: ss.definition?.[0] ?? "",
-            ...(ex.length ? { ex } : {}),
-            ...(syn.length ? { syn } : {}),
-            ...(broader.length ? { broader } : {}),
-          });
+          const members = (ss.members as string[]).filter((m) => m !== lemma).map((word) => ({ word }));
+          const hypernyms = (ss.hypernym ?? []).flatMap((h: string) => (synsets[h]?.members ?? []).map((word: string) => ({ word })));
+          senses.push(
+            compact({
+              gloss: (ss.definition ?? []).join("; "),
+              examples: (ss.example ?? []).map((x: any): Example => compact({ text: typeof x === "string" ? x : x.text, ref: typeof x === "string" ? undefined : x.source })),
+              relations: compact({ synonyms: members, hypernyms } as Relations),
+            }),
+          );
         }
-        (e.wn ??= []).push(wn);
+        (e.wn ??= []).push(
+          compact({
+            word: lemma,
+            pos: POS[posKey[0]] ?? posKey,
+            pron: (info.pronunciation ?? []).map((p: any): Pron => compact({ text: p.value, kind: "ipa", tags: p.variety ? [p.variety] : undefined })),
+            senses,
+          }),
+        );
         count++;
       }
     }
@@ -94,7 +127,7 @@ function loadWordNet() {
   console.log(`wordnet: ${count} lemma/pos entries`);
 }
 
-// ---------------------------------------------------------------- Wiktionary helpers
+// ---------------------------------------------------------------- Wiktionary (wiktextract)
 async function* jsonl(file: string) {
   const rl = readline.createInterface({ input: fs.createReadStream(file).pipe(zlib.createGunzip()), crlfDelay: Infinity });
   let n = 0;
@@ -106,184 +139,172 @@ async function* jsonl(file: string) {
   }
 }
 
-const HIDDEN_TAGS = new Set(["form-of", "alt-of", "no-gloss", "Hanja", "hanja", "abbreviation", "morpheme", "error-unknown-tag"]);
+/**
+ * wiktextract bookkeeping tags: they describe how wiktextract parsed the page, not the word, so they
+ * are dropped. Every other tag is kept verbatim.
+ */
+const PARSER_TAGS = new Set(["table-tags", "inflection-template", "error-unknown-tag", "no-gloss", "class"]);
+const tagsOf = (xs: unknown) => strs(xs)?.filter((t) => !PARSER_TAGS.has(t));
 
-function etymology(text?: string): string | undefined {
+/** wiktextract prefixes the rendered etymology tree to the prose; keep only the prose. */
+function etymologyText(text?: string): string | undefined {
   if (!text) return undefined;
   if (text.startsWith("Etymology tree")) {
-    // wiktextract prefixes the rendered tree; the prose is the last paragraph
     const lines = text.split("\n").filter(Boolean);
     text = lines[lines.length - 1];
   }
-  return clip(text.trim(), 1200) || undefined;
+  return text.trim() || undefined;
 }
 
-function sounds(o: any) {
-  const ipa = (o.sounds ?? [])
-    .filter((s: any) => s.ipa)
-    .slice(0, 4)
-    .map((s: any) => (s.tags?.length ? { v: s.ipa, tags: s.tags.slice(0, 3) } : { v: s.ipa }));
-  return ipa.length ? ipa : undefined;
-}
-
-const COMMONS = "https://upload.wikimedia.org/wikipedia/commons/";
-/** Accent label for a recording: US / UK when known, otherwise the first tag. */
-function accent(tags: string[] = []): string | undefined {
-  if (tags.some((t) => /^(US|General-American)$/.test(t))) return "US";
-  if (tags.some((t) => /^(UK|Received-Pronunciation|Southern-England)$/.test(t))) return "UK";
-  return tags[0];
-}
-/** Up to two recordings (prefer one US + one UK), as paths under Wikimedia Commons. */
-function audio(o: any): Audio[] | undefined {
-  const all: Audio[] = (o.sounds ?? [])
-    .filter((s: any) => typeof s.mp3_url === "string" && s.mp3_url.startsWith(COMMONS))
-    .map((s: any) => ({ ...(accent(s.tags) && { tag: accent(s.tags) }), mp3: s.mp3_url.slice(COMMONS.length) }));
-  const pick: Audio[] = [];
-  for (const want of ["US", "UK"]) {
-    const a = all.find((x) => x.tag === want);
-    if (a) pick.push(a);
-  }
-  if (!pick.length && all[0]) pick.push(all[0]);
-  return pick.length ? pick : undefined;
-}
-
-/** Inflected forms worth showing (plural, past, participles, comparative); drops spelling variants. */
-const FORM_SKIP = [
-  "table-tags", "inflection-template", "romanization", "canonical", "alternative", "obsolete", "archaic",
-  "class", "hanja", "nonstandard", "colloquial", "dialectal", "rare", "second-person", "first-person",
-];
-function forms(o: any) {
-  const seen = new Set<string>();
-  const out = (o.forms ?? [])
-    .filter((f: any) => f.form && f.form !== o.word && f.form !== "-" && !f.tags?.some((t: string) => FORM_SKIP.includes(t)))
-    .filter((f: any) => !seen.has(f.form) && seen.add(f.form)) // "ran" once, not per person
-    .slice(0, 6)
-    .map((f: any) => (f.tags?.length ? { f: f.form, tags: f.tags.slice(0, 3) } : { f: f.form }));
-  return out.length ? out : undefined;
-}
-
-/** Derived words (사랑 -> 사랑하다, 사랑니), shortest/plainest first. */
-function derived(o: any) {
-  const list = [...(o.derived ?? []), ...(o.senses ?? []).flatMap((s: any) => s.derived ?? [])]
-    .filter((d: any) => d.word && d.word !== o.word && !/[()]/.test(d.word))
-    .map((d: any) => ({ w: d.word as string, ...(d.english && { en: clip(d.english, 60) }) }));
-  const seen = new Set<string>();
-  const out = list.filter((d) => !seen.has(d.w) && seen.add(d.w)).sort((a, b) => a.w.length - b.w.length).slice(0, 12);
-  return out.length ? out : undefined;
-}
-
-function senses(o: any, korean: boolean): WiktSense[] {
-  const out: WiktSense[] = [];
-  for (const s of o.senses ?? []) {
-    const glosses: string[] | undefined = s.glosses;
-    if (!glosses?.length) continue;
-    const sense: WiktSense = { g: clip(glosses[glosses.length - 1], 600) };
-    if (glosses.length > 1) sense.parent = clip(glosses[0], 300);
-    const tags = (s.tags ?? []).filter((t: string) => !HIDDEN_TAGS.has(t)).slice(0, 4);
-    if (tags.length) sense.tags = tags;
-    const exs = (s.examples ?? []).filter((x: any) => x.text);
-    const picked = [...exs.filter((x: any) => x.type !== "quotation"), ...exs.filter((x: any) => x.type === "quotation")].slice(0, korean ? 3 : 2);
-    if (picked.length)
-      sense.ex = picked.map((x: any) => {
-        const ex: { t: string; roman?: string; en?: string } = { t: clip(x.text, 300) };
-        if (x.roman) ex.roman = clip(x.roman, 300);
-        const en = x.english ?? x.translation;
-        if (en) ex.en = clip(en, 300);
-        return ex;
-      });
-    const syn = (s.synonyms ?? []).map((x: any) => x.word).filter(Boolean).slice(0, 8);
-    if (syn.length) sense.syn = syn;
-    const of = s.form_of?.[0]?.word ?? s.alt_of?.[0]?.word;
-    if (of && of !== o.word) sense.of = of;
-    out.push(sense);
+function prons(o: any): Pron[] {
+  const out: Pron[] = [];
+  for (const s of o.sounds ?? []) {
+    for (const kind of ["ipa", "enpr"] as const) if (s[kind]) out.push(compact({ text: s[kind], kind, tags: tagsOf(s.tags) }));
   }
   return out;
 }
 
-// ---------------------------------------------------------------- Wiktionary English
-const koReverse = new Map<string, KoReverse[]>();
+function audios(o: any): Audio[] {
+  return (o.sounds ?? [])
+    .filter((s: any) => typeof s.mp3_url === "string")
+    .map((s: any): Audio => compact({ url: s.mp3_url, tags: tagsOf(s.tags) }));
+}
 
+/**
+ * wiktextract mixes two things in `forms`: the headline forms printed next to the headword (no
+ * `source`) and full inflection tables (`source: "conjugation" | "declension" | "inflection"`).
+ * They are kept apart, each complete and in source order. Romanizations and hanja are pronunciation
+ * and spelling data, stored in `pron` and `alt`.
+ */
+const isForm = (f: any) => f.form && !f.tags?.some((t: string) => PARSER_TAGS.has(t) || t === "romanization" || t === "hanja");
+const form = (f: any): Form => compact({ form: f.form, tags: tagsOf(f.tags) });
+function wiktForms(o: any): Form[] {
+  return (o.forms ?? []).filter((f: any) => isForm(f) && !f.source).map(form);
+}
+function wiktTables(o: any): FormTable[] {
+  const tables = new Map<string, Form[]>();
+  for (const f of o.forms ?? []) {
+    if (!isForm(f) || !f.source) continue;
+    tables.set(f.source, [...(tables.get(f.source) ?? []), form(f)]);
+  }
+  return [...tables].map(([kind, forms]) => ({ kind, forms }));
+}
+
+const refs = (xs: any[] | undefined): WordRef[] =>
+  (xs ?? []).filter((x) => x?.word).map((x) => compact({ word: x.word, note: x.english ?? x.translation, tags: tagsOf(x.tags) }));
+
+function wiktRelations(o: any): Relations {
+  const kinds: [RelationKind, string][] = [
+    ["synonyms", "synonyms"],
+    ["antonyms", "antonyms"],
+    ["hypernyms", "hypernyms"],
+    ["hyponyms", "hyponyms"],
+    ["related", "related"],
+    ["derived", "derived"],
+  ];
+  return compact(Object.fromEntries(kinds.map(([k, src]) => [k, refs(o[src])])) as Relations);
+}
+
+const isKo = (t: any) => (t.lang_code ?? t.code) === "ko" && t.word;
+const translation = (t: any): Translation => compact({ word: t.word, lang: "ko", roman: t.roman, alt: t.alt, tags: tagsOf(t.tags) });
+
+function wiktSenses(o: any): Sense[] {
+  const out: Sense[] = [];
+  for (const s of o.senses ?? []) {
+    const glosses: string[] | undefined = s.glosses;
+    if (!glosses?.length) continue;
+    out.push(
+      compact({
+        gloss: glosses[glosses.length - 1],
+        parent: glosses.length > 1 ? glosses.slice(0, -1).join(" › ") : undefined,
+        tags: tagsOf(s.tags),
+        formOf: [...(s.form_of ?? []), ...(s.alt_of ?? [])].map((x: any) => x.word).filter(Boolean),
+        examples: (s.examples ?? [])
+          .filter((x: any) => x.text)
+          .map((x: any): Example => compact({ text: x.text, translation: x.english ?? x.translation, roman: x.roman, ref: x.ref })),
+        relations: wiktRelations(s),
+      }),
+    );
+  }
+  return out;
+}
+
+function wiktEntry(o: any): DictEntry {
+  return compact({
+    word: o.word,
+    pos: o.pos,
+    etym: o.etymology_number ? Number(o.etymology_number) : undefined,
+    alt: (o.forms ?? []).filter((f: any) => f.tags?.includes("hanja")).map((f: any) => f.form),
+    pron: [
+      ...prons(o),
+      ...(o.forms ?? []).filter((f: any) => f.tags?.includes("romanization")).map((f: any): Pron => ({ text: f.form, kind: "romanization" })),
+    ],
+    audio: audios(o),
+    forms: wiktForms(o),
+    tables: wiktTables(o),
+    etymology: etymologyText(o.etymology_text),
+    senses: wiktSenses(o),
+    relations: wiktRelations(o),
+  });
+}
+
+// ---------------------------------------------------------------- Wiktionary: English entries (+ Korean translations)
+/**
+ * English entries go to `en`. Their Korean translations, which Wiktionary keeps per sense, go to
+ * `enko` as an entry with the same headword and part of speech whose senses carry only the
+ * translations. Each Korean word also gets a backlink: "given as a translation of <word> (<sense>)".
+ */
 async function loadWiktEnglish() {
   let count = 0;
   let translations = 0;
   for await (const o of jsonl(path.join(RAW, "en.jsonl.gz"))) {
     if (!o.word || o.lang_code !== "en") continue;
-    const ss = senses(o, false);
-    if (!ss.length) continue;
-    const we: WiktEntry = { word: o.word, pos: o.pos, senses: ss };
-    if (o.etymology_number) we.etym = Number(o.etymology_number);
-    const ipa = sounds(o);
-    if (ipa) we.ipa = ipa;
-    const rec = audio(o);
-    if (rec) we.audio = rec;
-    const ety = etymology(o.etymology_text);
-    if (ety) we.ety = ety;
-    const f = forms(o);
-    if (f) we.forms = f;
-    const d = derived(o);
-    if (d) we.derived = d;
+    const entry = wiktEntry(o);
+    if (!entry.senses?.length) continue;
     const e = entryFor(o.word);
-    (e.en ??= []).push(we);
+    (e.en ??= []).push(entry);
     count++;
 
-    // Korean translations, grouped by the translated sense
-    // (wiktextract puts them either on the entry or on individual senses)
-    const isKo = (t: any) => (t.lang_code ?? t.code) === "ko" && t.word;
-    const ko = [
-      ...(o.translations ?? []).filter(isKo),
-      ...(o.senses ?? []).flatMap((s: any) =>
-        (s.translations ?? []).filter(isKo).map((t: any) => ({ ...t, sense: t.sense ?? s.glosses?.at(-1) })),
-      ),
-    ];
-    if (ko.length) {
-      const groups = new Map<string, EnKoGroup>();
-      for (const t of ko) {
-        const sense = clip(t.sense ?? "", 200);
-        let g = groups.get(sense);
-        if (!g) groups.set(sense, (g = { word: o.word, pos: o.pos, sense, ko: [] }));
-        if (g.ko.some((k) => k.w === t.word)) continue;
-        g.ko.push({ w: t.word, ...(t.roman && { roman: t.roman }), ...(t.alt && { alt: t.alt }), ...(t.tags?.length && { tags: t.tags.slice(0, 3) }) });
+    // Korean translations: on the entry (with a `sense` label) or on individual senses
+    const tSenses: Sense[] = [];
+    const byGloss = new Map<string, Sense>();
+    const add = (gloss: string, t: any) => {
+      let s = byGloss.get(gloss);
+      if (!s) byGloss.set(gloss, (s = { gloss, translations: [] }));
+      if (!s.translations!.some((x) => x.word === t.word && x.alt === t.alt)) s.translations!.push(translation(t));
+    };
+    for (const s of o.senses ?? []) for (const t of (s.translations ?? []).filter(isKo)) add(t.sense ?? s.glosses?.at(-1) ?? "", t);
+    for (const t of (o.translations ?? []).filter(isKo)) add(t.sense ?? "", t);
+    for (const s of byGloss.values()) tSenses.push(s);
+    if (!tSenses.length) continue;
+    (e.enko ??= []).push(compact({ word: o.word, pos: o.pos, etym: entry.etym, senses: tSenses }));
+    for (const s of tSenses)
+      for (const t of s.translations!) {
+        const k = entryFor(t.word);
+        const list = (k.koBacklinks ??= []);
+        if (!list.some((b) => b.word === o.word && b.pos === o.pos && b.sense === s.gloss)) list.push({ word: o.word, lang: "en", pos: o.pos, sense: s.gloss });
         translations++;
-        const rk = entryKey(t.word);
-        const rev = koReverse.get(rk) ?? [];
-        if (rev.length < 40 && !rev.some((r) => r.en === o.word && r.sense === sense)) rev.push({ en: o.word, pos: o.pos, sense });
-        koReverse.set(rk, rev);
       }
-      (e.enko ??= []).push(...groups.values());
-    }
   }
   console.log(`wiktionary en: ${count} entries, ${translations} korean translations`);
 }
 
-// ---------------------------------------------------------------- Wiktionary Korean
+// ---------------------------------------------------------------- Wiktionary: Korean entries
 async function loadWiktKorean() {
   let count = 0;
   for await (const o of jsonl(path.join(RAW, "ko.jsonl.gz"))) {
-    if (!o.word || o.lang_code !== "ko" || o.pos === "romanization") continue;
-    const ss = senses(o, true);
-    if (!ss.length) continue;
-    const we: WiktEntry = { word: o.word, pos: o.pos, senses: ss };
-    if (o.etymology_number) we.etym = Number(o.etymology_number);
-    const ipa = sounds(o);
-    if (ipa) we.ipa = ipa.slice(0, 2);
-    const rec = audio(o);
-    if (rec) we.audio = rec;
-    const ety = etymology(o.etymology_text);
-    if (ety) we.ety = ety;
-    const d = derived(o);
-    if (d) we.derived = d;
-    const roman = o.forms?.find((f: any) => f.tags?.includes("romanization"))?.form;
-    if (roman) we.roman = roman;
-    const hanja = o.forms?.find((f: any) => f.tags?.includes("hanja"))?.form;
-    if (hanja) we.hanja = hanja;
-    (entryFor(o.word).ko ??= []).push(we);
+    if (!o.word || o.lang_code !== "ko") continue;
+    const entry = wiktEntry(o);
+    if (!entry.senses?.length) continue;
+    (entryFor(o.word).ko ??= []).push(entry);
     count++;
   }
-  for (const [key, rev] of koReverse) (entries.get(key) ?? entryFor(key)).koRev = rev;
-  console.log(`wiktionary ko: ${count} entries, ${koReverse.size} reverse-translated korean words`);
+  let backlinked = 0;
+  for (const e of entries.values()) if (e.koBacklinks) backlinked++;
+  console.log(`wiktionary ko: ${count} entries, ${backlinked} korean words with english backlinks`);
 }
 
-// ---------------------------------------------------------------- word frequency (wordfreq, CC BY-SA 4.0)
+// ---------------------------------------------------------------- word frequency (search ranking only)
 function loadFrequency() {
   const file = path.join(RAW, "wordfreq.json");
   if (!fs.existsSync(file)) return console.log("wordfreq: skipped (raw/wordfreq.json missing)");
@@ -296,15 +317,15 @@ function loadFrequency() {
       n++;
     }
   }
-  console.log(`wordfreq: ${n} headwords with a frequency`);
+  console.log(`wordfreq: ${n} headwords with a frequency (used for search ranking only)`);
 }
 
-// ---------------------------------------------------------------- example sentence pairs (Tatoeba, CC BY 2.0 FR)
+// ---------------------------------------------------------------- Tatoeba sentence pairs
 /**
- * English–Korean sentence pairs, attached to the headwords they contain. English words are matched
- * by token; Korean headwords by their stem (먹다 -> 먹) at a word start, which catches 먹었다/먹어 too.
+ * A pair is attached to a headword only when the headword occurs in it as an exact whole word:
+ * English by token (and two-token phrases like "give up"), Korean by whitespace-separated word.
+ * No stemming or other guessing, so 먹다 gets no pairs (Korean sentences contain 먹어, 먹었다…).
  */
-const pairsByKey = new Map<string, SentencePair[]>();
 function loadTatoeba() {
   const dir = path.join(RAW, "tatoeba");
   if (!fs.existsSync(path.join(dir, "eng-kor_links.tsv"))) return console.log("tatoeba: skipped (raw/tatoeba missing)");
@@ -317,44 +338,36 @@ function loadTatoeba() {
     const id = l.slice(0, l.indexOf("\t"));
     if (engIds.has(id)) eng.set(id, l.split("\t")[2]);
   }
-  const seen = new Set<string>();
   const pairs: SentencePair[] = [];
   for (const [e, k] of links) {
     const en = eng.get(e);
     const ko = kor.get(k);
-    if (!en || !ko || seen.has(en)) continue; // one Korean translation per English sentence
-    seen.add(en);
-    pairs.push({ en, ko });
+    if (en && ko) pairs.push({ en, ko });
   }
-  // shortest sentences first so each word keeps its simplest examples
-  pairs.sort((a, b) => a.en.length - b.en.length);
+  let attached = 0;
   const add = (key: string, p: SentencePair) => {
-    const list = pairsByKey.get(key) ?? [];
-    if (list.length < 5 && !list.includes(p)) list.push(p);
-    pairsByKey.set(key, list);
+    const e = entries.get(key);
+    if (!e) return;
+    const list = (e.pairs ??= []);
+    if (!list.includes(p)) {
+      list.push(p);
+      attached++;
+    }
   };
-  // English: every token and adjacent token pair ("give up") that is a headword
   for (const p of pairs) {
     const tokens = p.en.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) ?? [];
     for (let i = 0; i < tokens.length; i++) {
-      for (const k of [tokens[i], tokens[i + 1] && `${tokens[i]} ${tokens[i + 1]}`]) if (k && entries.get(k)?.enko) add(k, p);
+      add(tokens[i], p);
+      if (tokens[i + 1]) add(`${tokens[i]} ${tokens[i + 1]}`, p);
     }
+    for (const word of p.ko.split(/[\s.,!?"'()…·:;]+/).filter(Boolean)) if (entries.get(word)?.ko || entries.get(word)?.koBacklinks) add(word, p);
   }
-  // Korean: headwords with English translations, matched by stem at a word start
-  const koHeads = [...entries.keys()].filter((k) => /^[\uac00-\ud7af]+$/.test(k) && (entries.get(k)!.ko || entries.get(k)!.koRev));
-  for (const k of koHeads) {
-    const stem = k.endsWith("다") && k.length > 1 ? k.slice(0, -1) : k;
-    if (stem.length < 1) continue;
-    const re = new RegExp(`(^|[\\s"'(])${stem}`);
-    for (const p of pairs) if (re.test(p.ko)) add(k, p);
-  }
-  for (const [key, list] of pairsByKey) entries.get(key)!.pairs = list;
-  console.log(`tatoeba: ${pairs.length} sentence pairs, attached to ${pairsByKey.size} headwords`);
+  console.log(`tatoeba: ${pairs.length} sentence pairs, ${attached} exact word matches`);
 }
 
 // ---------------------------------------------------------------- output
-function mask(e: Entry): number {
-  return (e.wn ? DICT.wn : 0) | (e.en ? DICT.en : 0) | (e.enko ? DICT.enko : 0) | (e.ko || e.koRev ? DICT.ko : 0);
+function mask(e: Collected): number {
+  return (e.wn ? DICT.wn : 0) | (e.en ? DICT.en : 0) | (e.enko ? DICT.enko : 0) | (e.ko || e.koBacklinks ? DICT.ko : 0);
 }
 
 function rmrf(dir: string) {
@@ -362,43 +375,63 @@ function rmrf(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-/** The part of an entry that belongs to one data set, or undefined if the word isn't in it. */
-const PART: { [D in ChunkId]: (e: Entry) => DictData[D] | undefined } = {
+/** The part of a headword that belongs to one data set, or undefined if the word isn't in it. */
+const PART: { [D in ChunkId]: (e: Collected) => DictData[D] | undefined } = {
   wn: (e) => e.wn,
   en: (e) => e.en,
   enko: (e) => e.enko,
-  ko: (e) => (e.ko || e.koRev ? { ...(e.ko && { ko: e.ko }), ...(e.koRev && { rev: e.koRev }) } : undefined),
+  ko: (e) => (e.ko || e.koBacklinks ? compact({ entries: e.ko, backlinks: e.koBacklinks }) : undefined),
   ex: (e) => e.pairs,
 };
 
+/**
+ * Headwords whose data is larger than this are written to their own file (d/<id>/x/<hash>.json) and
+ * the chunk keeps a pointer { "$file": "<hash>" }. Nothing is cut; this only keeps one huge headword
+ * (Korean 사: 174 hanja senses, 880 KB) from slowing down every other lookup in its chunk. The rule
+ * is the same for every source.
+ */
+const OWN_FILE_BYTES = 64_000;
+
 function writeEntries() {
   rmrf(path.join(OUT, "e")); // pre-split layout
-  for (const dict of Object.keys(SHARDS) as ChunkId[]) {
-    const dir = path.join(OUT, "d", dict);
+  const report: Record<string, unknown> = {};
+  for (const id of Object.keys(SHARDS) as ChunkId[]) {
+    const dir = path.join(OUT, "d", id);
     rmrf(dir);
     const shards = new Map<string, Record<string, unknown>>();
     let count = 0;
+    let ownFiles = 0;
     for (const [key, e] of entries) {
-      const part = PART[dict](e);
+      const part = PART[id](e);
       if (!part) continue;
-      const s = shardOf(key, SHARDS[dict]);
+      const s = shardOf(key, SHARDS[id]);
       let shard = shards.get(s);
       if (!shard) shards.set(s, (shard = {}));
-      shard[key] = part;
+      const json = JSON.stringify(part);
+      if (json.length > OWN_FILE_BYTES) {
+        const file = ownFileName(key);
+        fs.mkdirSync(path.join(dir, "x"), { recursive: true });
+        fs.writeFileSync(path.join(dir, "x", `${file}.json`), json);
+        shard[key] = { $file: file };
+        ownFiles++;
+      } else shard[key] = part;
       count++;
     }
     let bytes = 0;
+    let gz = 0;
     let max = 0;
+    let i = 0;
     for (const [s, shard] of shards) {
       const json = JSON.stringify(shard);
       bytes += json.length;
       max = Math.max(max, json.length);
+      if (i++ % 16 === 0) gz += zlib.gzipSync(json).length * 16; // sampled compressed size
       fs.writeFileSync(path.join(dir, `${s}.json`), json);
     }
-    console.log(
-      `entries ${dict}: ${count} headwords in ${shards.size} chunks, ${(bytes / 1e6).toFixed(0)} MB, avg ${(bytes / shards.size / 1e3).toFixed(0)} KB, max ${(max / 1e3).toFixed(0)} KB`,
-    );
+    report[id] = { headwords: count, chunks: shards.size, ownFiles, mb: +(bytes / 1e6).toFixed(0), avgKb: +(bytes / shards.size / 1e3).toFixed(0), maxKb: +(max / 1e3).toFixed(0), avgGzKb: +(gz / shards.size / 1e3).toFixed(0) };
+    console.log(`entries ${id}:`, JSON.stringify(report[id]));
   }
+  return report;
 }
 
 /**
@@ -455,15 +488,15 @@ function writeIndex() {
   console.log(`index: ${rows.length} rows in ${chunks} chunks, ${topCount} precomputed prefixes`);
 }
 
-function writeMeta() {
+function writeMeta(sizes: Record<string, unknown>) {
   const stats = { headwords: entries.size, wn: 0, en: 0, enko: 0, ko: 0 };
   for (const e of entries.values()) {
     if (e.wn) stats.wn++;
     if (e.en) stats.en++;
     if (e.enko) stats.enko++;
-    if (e.ko || e.koRev) stats.ko++;
+    if (e.ko || e.koBacklinks) stats.ko++;
   }
-  fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ builtAt: new Date().toISOString(), stats }, null, 2));
+  fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ builtAt: new Date().toISOString(), stats, sizes }, null, 2));
   console.log("stats", stats);
 }
 
@@ -473,7 +506,7 @@ await loadWiktEnglish();
 await loadWiktKorean();
 loadFrequency();
 loadTatoeba();
-writeEntries();
+const sizes = writeEntries();
 writeIndex();
-writeMeta();
+writeMeta(sizes);
 console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s, peak RSS ${(process.resourceUsage().maxRSS / 1024 / 1024).toFixed(1)} GB`);

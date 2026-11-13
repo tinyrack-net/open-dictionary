@@ -18,7 +18,7 @@ Also used on the word page:
 | Data | Source | License |
 |---|---|---|
 | English–Korean example sentences | [Tatoeba](https://tatoeba.org/) | CC BY 2.0 FR |
-| Word frequency (★ stars, search ranking) | [wordfreq 3.1](https://github.com/rspeer/wordfreq) | CC BY-SA 4.0 |
+| Word frequency (search ranking only, never shown) | [wordfreq 3.1](https://github.com/rspeer/wordfreq) | CC BY-SA 4.0 |
 | Recorded pronunciations | [Wikimedia Commons](https://commons.wikimedia.org/), linked from Wiktionary | per recording (CC BY-SA / CC BY / CC0) |
 
 ## URLs
@@ -74,10 +74,11 @@ data/site/
   i/manifest.json          first key of each search chunk                      (1 file)
   i/<n>.json               search index: headword + which dictionaries have it (586 chunks)
   d/wn/<shard>.json        WordNet entries                                     (256 chunks)
-  d/en/<shard>.json        Wiktionary English entries                          (2,048 chunks)
+  d/en/<shard>.json        Wiktionary English entries                          (4,096 chunks)
   d/enko/<shard>.json      English → Korean translations                       (32 chunks)
-  d/ko/<shard>.json        Korean → English entries + reverse translations     (128 chunks)
-  d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (32 chunks)
+  d/ko/<shard>.json        Korean entries + translation backlinks              (256 chunks)
+  d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (64 chunks)
+  d/<id>/x/<hash>.json     a single headword too large for a shared chunk      (60 files)
 ```
 
 Looking up `/en/word?word=love&dicts=en-ko`:
@@ -91,9 +92,31 @@ On a first visit an inline `<head>` script (`app/lib/preload.ts`) starts these r
 JavaScript has loaded; the data layer reuses them. `app/lib/preload.test.ts` checks that the script asks for
 exactly the files `getEntry` reads.
 
-The word page turns the raw entry into an answer-first view in `app/lib/view.ts` (summary line, US/UK audio,
-word forms, translations by part of speech, merged meanings with rare senses folded, homographs, bilingual
-examples, related words). `app/lib/view.test.ts` pins its behaviour on real words.
+## Data model: render sources as they are
+
+Every source is converted into one neutral format (`app/lib/types.ts`: entry → part of speech, etymology
+number, pronunciations, recordings, forms, inflection tables, senses with examples/translations/word lists)
+and rendered by one generic component (`app/components/DictEntryView.tsx`).
+
+Converters (`scripts/build-data.ts`) **copy, they don't compose**:
+
+- every field comes from the source; nothing is invented, merged across entries, ranked or summarized
+- the source's order (entries, senses, forms, examples) and its grammar tags are kept verbatim
+- nothing is truncated or capped (headwords too large for a shared chunk get their own file)
+
+The renderer has **no source-specific code**. Each selected source is one card, in the order of `?dicts=`;
+within a card, entries and senses keep the source's order. The only display rule is uniform: long lists show
+the first items and a "show all" button. In the Korean UI, tags and parts of speech are translated through a
+1:1 table (`app/lib/tags.ko.ts`); tags missing from it are shown as the source wrote them.
+
+Facts that are not dictionary entries are labeled as what they are: "given as a translation of *love*
+(English Wiktionary, sense: strong affection)" and Tatoeba sentence pairs (exact whole-word matches only).
+
+To add a dictionary: write a converter into the neutral format, add its id to `DICT`/`SHARDS` in
+`app/lib/keys.ts` and to `DICTIONARIES` in `app/lib/dicts.ts`. The renderer doesn't change.
+
+`app/lib/fidelity.test.ts` compares built entries with the raw source (entry order, parts of speech, every
+gloss and example, forms staying with their entry) and fails on any field the format doesn't define.
 
 Only 8 pages are prerendered: `/{lang}`, `/{lang}/word`, `/{lang}/about`, `/{lang}/saved` for each language.
 The word page is one HTML shell per language. Other paths (`/`, old links) get the SPA fallback `index.html`.
@@ -105,7 +128,7 @@ To add a dictionary, add its id to `DICT` and `SHARDS` in `app/lib/keys.ts`, the
 `wrangler.jsonc` deploys `build/client` as static assets only. There is no Worker script, so every request is a
 free static-asset request. `not_found_handling: single-page-application` serves `index.html` for unknown paths.
 
-Free plan budget: 20,000 files per version and 25 MiB per file. The build has about 3,700 files, and
+Free plan budget: 20,000 files per version and 25 MiB per file. The build has about 6,000 files, and
 `scripts/postbuild.ts` fails the build if the limit is exceeded.
 
 GitHub Actions (`.github/workflows/deploy.yml`) builds and deploys on every push to `main`, and weekly to pick up fresh

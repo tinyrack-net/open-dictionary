@@ -20,7 +20,7 @@ function run(url: string, manifest = { chunk: 1, first: [""] }) {
 const requested = (url: string) => Object.keys(run(url).__odPreload ?? {});
 
 const WORDS = ["love", "Run", "give up", "café", "사랑", "먹다", "  water ", "ÉCOLE", "n'importe", "x"];
-const DICTS = [null, "wordnet", "en-ko,ko-en", "wiktionary,en-ko", "", "bogus,ko-en"];
+const DICTS = [null, "wordnet", "en-ko,ko-en", "wiktionary,en-ko", "", "bogus,ko-en", "ko-en,wordnet,ko-en"];
 
 test("preload script requests exactly what getEntry will read", () => {
   for (const word of WORDS)
@@ -48,6 +48,12 @@ test("preload script also requests the index chunk once the manifest arrives", a
     await new Promise((r) => setTimeout(r, 0));
     assert.ok(Object.keys(win.__odPreload!).includes(`i/${chunk}.json`), `${word} -> i/${chunk}.json`);
   }
+});
+
+test("selected dictionaries keep the URL's order (the page shows them in that order)", () => {
+  assert.deepEqual(parseDicts("wiktionary,wordnet"), ["en", "wn"]);
+  assert.deepEqual(parseDicts("ko-en,bogus,ko-en,en-ko"), ["ko", "enko"]);
+  assert.deepEqual(parseDicts(null), ALL_DICTS);
 });
 
 test("every dictionary is covered", () => {

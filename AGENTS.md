@@ -20,9 +20,14 @@
   and build links with its `wordHref`/`pageHref`/`langHref` so settings carry over.
 - Prerendered HTML can't see the query string: URL-dependent UI must render defaults until `useHydrated()`.
 
-## Word page
-- `app/lib/view.ts` decides what the word page shows (answer first: summary, translations, meanings, examples).
-  Keep it pure and extend `app/lib/view.test.ts` with the real word that motivated a change.
+## Dictionary data: render sources as they are
+- Never synthesize content. Converters in `scripts/build-data.ts` copy each source into the neutral format of
+  `app/lib/types.ts`: same entries, order, glosses, examples and tags; no merging across entries or sources,
+  no summaries, ratings, rankings, guessed links, truncation or caps.
+- The renderer (`app/components/DictEntryView.tsx`, `app/routes/word.tsx`) must stay source-agnostic: no
+  branches on dictionary id, language or tag value. Display rules apply to every source equally.
+- Korean UI labels for tags/POS come only from the 1:1 table `app/lib/tags.ko.ts`; unknown tags show verbatim.
+- `app/lib/fidelity.test.ts` checks built data against the raw source; extend it with the word behind a bug.
 - `app/lib/preload.ts` mirrors the data paths of `data.ts` in plain JavaScript; `preload.test.ts` must stay green.
 
 ## Commands

@@ -31,7 +31,8 @@ export function SettingsMenu() {
                   key={d.id}
                   checked={settings.dicts.includes(d.id)}
                   onCheckedChange={(on: boolean) =>
-                    settings.setDicts(DICTIONARIES.map((x) => x.id).filter((id) => (id === d.id ? on : settings.dicts.includes(id))))
+                    // keep the current order; a newly enabled dictionary goes to the end
+                    settings.setDicts(on ? [...settings.dicts.filter((id) => id !== d.id), d.id] : settings.dicts.filter((id) => id !== d.id))
                   }
                   closeOnClick={false}
                 >

@@ -17,11 +17,19 @@ export const ALL_DICTS: DictId[] = DICTIONARIES.map((d) => d.id);
 const bySlug = new Map(DICTIONARIES.map((d) => [d.slug, d.id]));
 export const slugOf = new Map(DICTIONARIES.map((d) => [d.id, d.slug]));
 
-/** null (param absent) means every dictionary. */
+/**
+ * Selected dictionaries in the order the URL lists them (that is also the order the word page shows
+ * them in). null (param absent) means every dictionary, in the default order. Unknown slugs and
+ * duplicates are ignored.
+ */
 export function parseDicts(value: string | null): DictId[] {
   if (value === null) return ALL_DICTS;
-  const picked = new Set(value.split(",").map((s) => bySlug.get(s.trim())));
-  return ALL_DICTS.filter((d) => picked.has(d));
+  const out: DictId[] = [];
+  for (const s of value.split(",")) {
+    const id = bySlug.get(s.trim());
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
 }
 
 export const dictMask = (ids: DictId[]) => ids.reduce((m, d) => m | DICT[d], 0);

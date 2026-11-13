@@ -74,7 +74,8 @@ export interface Settings {
 /** Search-string value for each setting, or null when it is the default (omitted from the URL). */
 function settingParams(s: Pick<Settings, "dicts" | "theme">): [string, string][] {
   const out: [string, string][] = [];
-  if (s.dicts.length !== ALL_DICTS.length) out.push(["dicts", s.dicts.map((d) => slugOf.get(d)).join(",")]);
+  // omitted only when it is exactly the default: every dictionary, in the default order
+  if (s.dicts.join() !== ALL_DICTS.join()) out.push(["dicts", s.dicts.map((d) => slugOf.get(d)).join(",")]);
   if (s.theme !== "auto") out.push(["theme", s.theme]);
   return out;
 }

@@ -20,7 +20,7 @@ export function preloadScript(): string {
     if (!word) return;
     var SHARDS = ${JSON.stringify(SHARDS)}, SLUGS = ${JSON.stringify(slugs)}, ALL = ${JSON.stringify(all)};
     var d = q.get("dicts"), dicts = ALL;
-    if (d !== null) { var on = d.split(",").map(function (s) { return SLUGS[s.trim()]; }); dicts = ALL.filter(function (x) { return on.indexOf(x) >= 0; }); }
+    if (d !== null) { dicts = []; d.split(",").forEach(function (s) { var id = SLUGS[s.trim()]; if (id && dicts.indexOf(id) < 0) dicts.push(id); }); }
     var h = 0x811c9dc5;
     for (var i = 0; i < word.length; i++) { h ^= word.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     h = h >>> 0;
