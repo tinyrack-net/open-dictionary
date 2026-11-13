@@ -30,7 +30,10 @@ export function preloadScript(): string {
     if (dicts.indexOf("enko") >= 0 || dicts.indexOf("ko") >= 0) ids.push("ex");
     var paths = ["i/manifest.json"].concat(ids.map(function (id) { return "d/" + id + "/" + shard(SHARDS[id]) + ".json"; }));
     var out = (window.__odPreload = {});
-    paths.forEach(function (p) { out[p] = fetch(BASE + p); });
+    // A request cancelled by leaving the page (reload, back) rejects; nothing may be waiting on it
+    // yet, so mark it handled here (readJson still sees the rejection and treats it as a miss).
+    function get(p) { var r = fetch(BASE + p); r.catch(function () {}); return r; }
+    paths.forEach(function (p) { out[p] = get(p); });
     // The index chunk depends on the manifest (chunkFor in data.ts): request it as soon as the
     // manifest arrives instead of waiting for the app. Fold like foldKey: strip combining marks.
     var fold = word.normalize("NFD").replace(/\\p{M}/gu, "").normalize("NFC");
@@ -38,7 +41,7 @@ export function preloadScript(): string {
       var lo = 0, hi = m.first.length - 1;
       while (lo < hi) { var mid = (lo + hi + 1) >> 1; if (m.first[mid] < fold) lo = mid; else hi = mid - 1; }
       var p = "i/" + lo + ".json";
-      if (!out[p]) out[p] = fetch(BASE + p);
+      if (!out[p]) out[p] = get(p);
     }).catch(function () {});
   } catch (e) {}
 })();`;

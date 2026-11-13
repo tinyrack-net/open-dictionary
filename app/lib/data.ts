@@ -46,7 +46,8 @@ async function readJson<T>(rel: string): Promise<T | null> {
     if (res) await reloadIfOutdated();
     return null;
   }
-  return res.json();
+  // a body cut off (leaving the page, flaky network) is a miss, not a crash of the page
+  return res.json().catch(() => null);
 }
 
 /**
@@ -81,6 +82,8 @@ function cached<T>(rel: string): Promise<T | null> {
   if (!p) {
     p = readJson<T>(rel);
     cache.set(rel, p);
+    // don't keep a failed read (network blip, cancelled request): the next lookup tries again
+    p.then((v) => v === null && cache.get(rel) === p && cache.delete(rel));
     if (cache.size > 256) cache.delete(cache.keys().next().value!);
   }
   return p;
