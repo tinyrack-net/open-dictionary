@@ -6,10 +6,25 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const CLIENT = path.join(ROOT, "build", "client");
 const FILE_LIMIT = 20_000; // Workers free plan, files per version
 
-// 1. Copy dictionary data next to the app.
+// 1. Copy dictionary data next to the app, under its content version (app/lib/dataVersion.ts):
+//    build/client/data/version.txt          deployed version (revalidated on every request)
+//    build/client/data/<version>/...        the data, cached forever (public/_headers)
 const t0 = Date.now();
-fs.cpSync(path.join(ROOT, "data", "site"), path.join(CLIENT, "data"), { recursive: true });
-console.log(`postbuild: copied data/site -> build/client/data in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+const SITE = path.join(ROOT, "data", "site");
+const version = fs.readFileSync(path.join(SITE, "version.txt"), "utf8").trim();
+if (!/^[0-9a-f]{12}$/.test(version)) throw new Error(`postbuild: bad data version "${version}" (rerun pnpm build-data)`);
+const DATA = path.join(CLIENT, "data");
+fs.rmSync(DATA, { recursive: true, force: true });
+for (const e of fs.readdirSync(SITE)) {
+  if (e === "version.txt") continue;
+  fs.cpSync(path.join(SITE, e), path.join(DATA, version, e), { recursive: true });
+}
+fs.writeFileSync(path.join(DATA, "version.txt"), version);
+// the app must have been built against the same data version
+const bundles = fs.readdirSync(path.join(CLIENT, "assets")).filter((f) => f.endsWith(".js"));
+if (!bundles.some((f) => fs.readFileSync(path.join(CLIENT, "assets", f), "utf8").includes(version)))
+  throw new Error(`postbuild: the app bundle doesn't reference data version ${version}; rebuild the app`);
+console.log(`postbuild: copied data/site -> build/client/data/${version} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 // 2. Report the static asset budget per top-level directory.
 const usage = new Map<string, { files: number; bytes: number }>();

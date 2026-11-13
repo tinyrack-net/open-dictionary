@@ -3,12 +3,15 @@ import { test } from "node:test";
 import { lookupPaths } from "./data.ts";
 import { preloadScript } from "./preload.ts";
 import { ALL_DICTS, parseDicts } from "./dicts.ts";
+import { dataUrl } from "./dataVersion.ts";
 
 /** Runs the inline script against a fake window and returns the paths it requested. */
+const fetched: string[] = [];
 function run(url: string, manifest = { chunk: 1, first: [""] }) {
   const u = new URL(url, "https://example.test");
   const win: { __odPreload?: Record<string, unknown> } = {};
   const fakeFetch = async (p: string) => {
+    fetched.push(p);
     const body = p.endsWith("manifest.json") ? manifest : {};
     const res = { ok: true, json: async () => body, clone: () => res, path: p };
     return res;
@@ -54,6 +57,13 @@ test("selected dictionaries keep the URL's order (the page shows them in that or
   assert.deepEqual(parseDicts("wiktionary,wordnet"), ["en", "wn"]);
   assert.deepEqual(parseDicts("ko-en,bogus,ko-en,en-ko"), ["ko", "enko"]);
   assert.deepEqual(parseDicts(null), ALL_DICTS);
+});
+
+test("preload fetches the same versioned URLs as data.ts", () => {
+  fetched.length = 0;
+  const win = run("/en/word?word=love");
+  assert.deepEqual(fetched, Object.keys(win.__odPreload!).map((rel) => dataUrl(rel)));
+  assert.ok(fetched.every((u) => /^\/data\/[^/]+\/(i|d)\//.test(u)), fetched.join());
 });
 
 test("every dictionary is covered", () => {

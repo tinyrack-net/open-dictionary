@@ -1,4 +1,5 @@
-// Data access in the browser. Everything is fetched lazily from /data/* in small chunks:
+// Data access in the browser. Everything is fetched lazily from /data/<version>/* (dataVersion.ts)
+// in small chunks:
 //   i/manifest.json + i/<n>.json   search index (headword -> which dictionaries have it)
 //   d/<id>/<shard>.json            one data set's entries for a hash range of headwords
 //
@@ -6,6 +7,7 @@
 // selected dictionary chunk at the same time (one round trip, not three). On a first visit the
 // inline PRELOAD_SCRIPT starts those same requests before the app's JavaScript has even loaded,
 // and readJson reuses them.
+import { DATA_VERSION, dataUrl, VERSION_URL } from "./dataVersion.ts";
 import { type ChunkId, DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "./keys.ts";
 import type { DictData, Entry, IndexRow } from "./types.ts";
 
@@ -14,6 +16,15 @@ declare global {
     /** responses the inline preload script already requested, keyed by data path */
     __odPreload?: Record<string, Promise<Response>>;
   }
+}
+
+/**
+ * Where a reload into a newer deploy should land. A client-side navigation loads data before the
+ * address bar changes, so the word page's loader records the URL it is loading (setLoadingUrl).
+ */
+let loadingUrl: string | undefined;
+export function setLoadingUrl(url: string) {
+  loadingUrl = url;
 }
 
 async function readJson<T>(rel: string): Promise<T | null> {
@@ -29,10 +40,39 @@ async function readJson<T>(rel: string): Promise<T | null> {
   }
   const preloaded = window.__odPreload?.[rel];
   if (preloaded) delete window.__odPreload![rel];
-  const res = await (preloaded ?? fetch(`/data/${rel}`)).catch(() => null);
+  const res = await (preloaded ?? fetch(dataUrl(rel))).catch(() => null);
   // a missing file may come back as the SPA fallback page, so check the type too
-  if (!res?.ok || !res.headers.get("content-type")?.includes("json")) return null;
+  if (!res?.ok || !res.headers.get("content-type")?.includes("json")) {
+    if (res) await reloadIfOutdated();
+    return null;
+  }
   return res.json();
+}
+
+/**
+ * A tab opened before a deploy asks for files of a data version that is no longer deployed. When a
+ * data file is missing, check which version is live and reload into it (the URL holds all state).
+ * Never resolves while the page reloads, so the old tab doesn't flash "not found" first.
+ *
+ * At most one automatic reload per live version: the tab remembers (sessionStorage, this tab only)
+ * which version it already reloaded for, so a mismatch a reload can't fix (e.g. a stale HTML cache)
+ * never turns into a loop; the page then just shows "not found" as before.
+ */
+const RELOADED_FOR = "od.reloadedFor";
+let versionCheck: Promise<void> | undefined;
+function reloadIfOutdated(): Promise<void> {
+  versionCheck ??= fetch(VERSION_URL, { cache: "no-cache" })
+    .then((r) => (r.ok ? r.text() : null))
+    .then((text) => {
+      const live = text?.trim();
+      if (!live || live === DATA_VERSION || sessionStorage.getItem(RELOADED_FOR) === live) return;
+      sessionStorage.setItem(RELOADED_FOR, live);
+      if (loadingUrl && loadingUrl !== location.href) location.assign(loadingUrl);
+      else location.reload();
+      return new Promise<void>(() => {});
+    })
+    .catch(() => {});
+  return versionCheck;
 }
 
 const cache = new Map<string, Promise<any>>();

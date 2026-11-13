@@ -29,6 +29,8 @@
 - Korean UI labels for tags/POS come only from the 1:1 table `app/lib/tags.ko.ts`; unknown tags show verbatim.
 - `app/lib/fidelity.test.ts` checks built data against the raw source; extend it with the word behind a bug.
 - `app/lib/preload.ts` mirrors the data paths of `data.ts` in plain JavaScript; `preload.test.ts` must stay green.
+- Data URLs always go through `dataUrl()` (`app/lib/dataVersion.ts`): `/data/<content hash>/...`. Never fetch
+  an unversioned data path; code and data of different builds must not meet in a browser cache.
 
 ## Commands
 - `pnpm typecheck`, `pnpm check:design`, `pnpm test`, `pnpm build` (needs `data/site` from `pnpm fetch-data && pnpm build-data`).

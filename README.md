@@ -79,7 +79,14 @@ data/site/
   d/ko/<shard>.json        Korean entries + translation backlinks              (256 chunks)
   d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (64 chunks)
   d/<id>/x/<hash>.json     a single headword too large for a shared chunk      (60 files)
+  version.txt              content hash of all the files above
 ```
+
+The site serves the data under `/data/<version>/` (`app/lib/dataVersion.ts`). The version is baked into
+the app at build time, so a page only ever reads data from its own build, never a cached chunk from an
+earlier one. The files are cached forever, and an identical data build keeps the same version.
+`/data/version.txt` names the live version; a tab left open across a deploy reloads once into the new
+build when one of its data files is gone.
 
 Looking up `/en/word?word=love&dicts=en-ko`:
 

@@ -11,6 +11,8 @@
 //   data/site/i/manifest.json        first key of each search index chunk
 //   data/site/i/<n>.json             search index chunks: headword, dictionary bitmask, frequency
 //   data/site/meta.json              build stats
+//   data/site/version.txt            content hash of d/ and i/; the site serves the data under
+//                                    /data/<version>/ so a browser never mixes cached files of two builds
 //
 // Every converter turns its source into the neutral format of app/lib/types.ts and follows its rules:
 // copy, don't compose; keep the source's order and tags; keep everything; omit empty fields.
@@ -21,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
+import crypto from "node:crypto";
 import { type ChunkId, DICT, entryKey, foldKey, ownFileName, rankScore, SHARDS, shardOf } from "../app/lib/keys.ts";
 import type {
   Audio,
@@ -44,6 +47,16 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const RAW = path.join(ROOT, "raw");
 const OUT = path.join(ROOT, "data", "site");
 const LIMIT = Number(process.env.LIMIT ?? Infinity); // lines per Wiktionary file (dev)
+
+/**
+ * Writes a data file and adds it to the content hash. Files are written in a deterministic order,
+ * so the same input gives the same version and browsers keep their cache across identical builds.
+ */
+const contentHash = crypto.createHash("sha256");
+function writeData(file: string, json: string) {
+  contentHash.update(path.relative(OUT, file).replaceAll(path.sep, "/")).update("\n").update(json).update("\n");
+  fs.writeFileSync(file, json);
+}
 
 /** Everything collected for one headword key, per source. */
 interface Collected {
@@ -393,7 +406,7 @@ const PART: { [D in ChunkId]: (e: Collected) => DictData[D] | undefined } = {
 const OWN_FILE_BYTES = 64_000;
 
 function writeEntries() {
-  rmrf(path.join(OUT, "e")); // pre-split layout
+  fs.rmSync(path.join(OUT, "e"), { recursive: true, force: true }); // pre-split layout
   const report: Record<string, unknown> = {};
   for (const id of Object.keys(SHARDS) as ChunkId[]) {
     const dir = path.join(OUT, "d", id);
@@ -411,7 +424,7 @@ function writeEntries() {
       if (json.length > OWN_FILE_BYTES) {
         const file = ownFileName(key);
         fs.mkdirSync(path.join(dir, "x"), { recursive: true });
-        fs.writeFileSync(path.join(dir, "x", `${file}.json`), json);
+        writeData(path.join(dir, "x", `${file}.json`), json);
         shard[key] = { $file: file };
         ownFiles++;
       } else shard[key] = part;
@@ -426,7 +439,7 @@ function writeEntries() {
       bytes += json.length;
       max = Math.max(max, json.length);
       if (i++ % 16 === 0) gz += zlib.gzipSync(json).length * 16; // sampled compressed size
-      fs.writeFileSync(path.join(dir, `${s}.json`), json);
+      writeData(path.join(dir, `${s}.json`), json);
     }
     report[id] = { headwords: count, chunks: shards.size, ownFiles, mb: +(bytes / 1e6).toFixed(0), avgKb: +(bytes / shards.size / 1e3).toFixed(0), maxKb: +(max / 1e3).toFixed(0), avgGzKb: +(gz / shards.size / 1e3).toFixed(0) };
     console.log(`entries ${id}:`, JSON.stringify(report[id]));
@@ -482,9 +495,9 @@ function writeIndex() {
   for (let c = 0; c < chunks; c++) {
     const slice = rows.slice(c * CHUNK, (c + 1) * CHUNK);
     first.push(slice[0].f);
-    fs.writeFileSync(path.join(dir, `${c}.json`), JSON.stringify({ rows: slice.map((r) => r.row), tops: tops[c] }));
+    writeData(path.join(dir, `${c}.json`), JSON.stringify({ rows: slice.map((r) => r.row), tops: tops[c] }));
   }
-  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ chunk: CHUNK, first }));
+  writeData(path.join(dir, "manifest.json"), JSON.stringify({ chunk: CHUNK, first }));
   console.log(`index: ${rows.length} rows in ${chunks} chunks, ${topCount} precomputed prefixes`);
 }
 
@@ -509,4 +522,7 @@ loadTatoeba();
 const sizes = writeEntries();
 writeIndex();
 writeMeta(sizes);
+const version = contentHash.digest("hex").slice(0, 12);
+fs.writeFileSync(path.join(OUT, "version.txt"), version);
+console.log("data version", version);
 console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s, peak RSS ${(process.resourceUsage().maxRSS / 1024 / 1024).toFixed(1)} GB`);

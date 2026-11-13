@@ -9,7 +9,7 @@ import { Link, type ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/word";
 import { Collapsed, DictEntries } from "~/components/DictEntryView";
 import { SaveButton } from "~/components/SaveButton";
-import { getEntry, search } from "~/lib/data";
+import { getEntry, search, setLoadingUrl } from "~/lib/data";
 import { addRecent } from "~/lib/history";
 import { posLabel, STRINGS, useT } from "~/lib/i18n";
 import { DICT, type DictId } from "~/lib/keys";
@@ -23,6 +23,7 @@ import type { Backlink, DictEntry, Entry, SentencePair } from "~/lib/types";
 // The page renders each selected source as it is, one card per source in the order of ?dicts=,
 // using the same generic renderer for all of them (components/DictEntryView.tsx).
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
+  setLoadingUrl(request.url);
   const params = new URL(request.url).searchParams;
   const word = params.get("word")?.trim() ?? "";
   if (!word) return { word, loaded: null, suggestions: [] as string[] };
