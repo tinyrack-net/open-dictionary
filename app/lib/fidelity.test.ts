@@ -282,3 +282,42 @@ test("krdict: only text is used; no recordings or other media files (they are li
     for (const e of part("kr", w)?.entries ?? []) assert.equal(e.audio, undefined, w);
   }
 });
+
+// ---------------------------------------------------------------- Simple English Wiktionary
+const SIMPLE = new URL("../../raw/simple.jsonl.gz", import.meta.url);
+const haveSimple = fs.existsSync(new URL("i/manifest.json", DATA)) && fs.existsSync(SIMPLE);
+
+test("simple wiktionary: every entry, sense, example and label is kept, in order", { skip: !haveSimple }, async () => {
+  const words = ["run", "happy", "set", "dictionary"];
+  const src = new Map<string, any[]>(words.map((w) => [w, []]));
+  const rl = readline.createInterface({ input: fs.createReadStream(SIMPLE).pipe(zlib.createGunzip()), crlfDelay: Infinity });
+  for await (const line of rl) {
+    const o = JSON.parse(line);
+    if (o.lang_code === "en" && src.has(o.word) && o.senses?.some((s: any) => s.glosses?.length)) src.get(o.word)!.push(o);
+  }
+  for (const w of words) {
+    const built = part("simple", w)!;
+    assert.deepEqual(
+      built.map((e) => e.pos),
+      src.get(w)!.map((o) => o.pos),
+      w,
+    );
+    built.forEach((e, i) => {
+      const senses = src.get(w)![i].senses.filter((s: any) => s.glosses?.length);
+      assert.deepEqual(
+        e.senses.map((s) => s.gloss),
+        senses.map((s: any) => s.glosses.at(-1)),
+        `${w} ${e.pos}: glosses`,
+      );
+      assert.deepEqual(
+        e.senses.map((s) => (s.examples ?? []).map((x) => x.text)),
+        senses.map((s: any) => (s.examples ?? []).filter((x: any) => x.text).map((x: any) => x.text)),
+        `${w} ${e.pos}: examples`,
+      );
+      // the edition's own labels ("countable", "transitive & intransitive") are kept verbatim
+      senses.forEach((s: any, j: number) => {
+        for (const t of s.raw_tags ?? []) assert.ok(e.senses[j].tags?.includes(t), `${w} ${e.pos} ${j}: ${t}`);
+      });
+    });
+  }
+});

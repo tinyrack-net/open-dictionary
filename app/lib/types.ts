@@ -148,6 +148,8 @@ export interface DictData {
   kr: { entries?: DictEntry[]; backlinks?: Backlink[] };
   /** Korean Wiktionary, English entries defined in Korean */
   kwen: DictEntry[];
+  /** Simple English Wiktionary, English entries */
+  simple: DictEntry[];
   /** Tatoeba English–Korean pairs */
   ex: SentencePair[];
 }
@@ -163,6 +165,7 @@ export interface Entry {
   kr?: DictEntry[];
   krBacklinks?: Backlink[];
   kwen?: DictEntry[];
+  simple?: DictEntry[];
   pairs?: SentencePair[];
 }
 

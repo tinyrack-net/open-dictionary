@@ -4,6 +4,7 @@
 //   raw/en.jsonl.gz      Wiktionary English entries (kaikki.org / wiktextract)
 //   raw/ko.jsonl.gz      Wiktionary Korean entries  (kaikki.org / wiktextract)
 //   raw/kowikt-en.jsonl.gz  Korean Wiktionary, English entries (kaikki.org / wiktextract)
+//   raw/simple.jsonl.gz  Simple English Wiktionary, English entries (kaikki.org / wiktextract)
 //   raw/krdict/*.json    한국어기초사전 (National Institute of Korean Language), full JSON export
 //   raw/wordfreq.json    word frequency (wordfreq 3.1, Zipf scale)        optional, search ranking only
 //   raw/tatoeba/*.tsv    English–Korean sentence pairs (Tatoeba)          optional
@@ -73,6 +74,7 @@ interface Collected {
   kr?: DictEntry[];
   krBacklinks?: Backlink[];
   kwen?: DictEntry[];
+  simple?: DictEntry[];
   pairs?: SentencePair[];
 }
 
@@ -344,6 +346,29 @@ async function loadKoWiktEnglish() {
   console.log(`kowiktionary en: ${count} entries`);
 }
 
+// ---------------------------------------------------------------- Simple English Wiktionary
+/**
+ * Simple English Wiktionary writes learner's definitions in plain English. Same extractor and format
+ * as the English edition, so the same converter applies, with one difference: this edition keeps its
+ * sense labels ("countable", "transitive & intransitive", "informal") in `raw_tags`, which are added
+ * to the sense's tags verbatim. Its sound entries name audio files but have no playable URL, so the
+ * entries carry no recordings (English Wiktionary's card has them).
+ */
+async function loadSimpleWikt() {
+  const file = path.join(RAW, "simple.jsonl.gz");
+  if (!fs.existsSync(file)) return console.log("simple wiktionary: skipped (raw/simple.jsonl.gz missing)");
+  let count = 0;
+  for await (const o of jsonl(file)) {
+    if (!o.word || o.lang_code !== "en") continue;
+    const senses = (o.senses ?? []).map((s: any) => ({ ...s, tags: [...(s.tags ?? []), ...(s.raw_tags ?? [])] }));
+    const entry = wiktEntry({ ...o, senses });
+    if (!entry.senses?.length) continue;
+    (entryFor(o.word).simple ??= []).push(entry);
+    count++;
+  }
+  console.log(`simple wiktionary: ${count} entries`);
+}
+
 // ---------------------------------------------------------------- 한국어기초사전 (krdict)
 /**
  * The export is LMF-style JSON: every object carries its fields as `feat: [{ att, val }]` (one object
@@ -552,7 +577,8 @@ function mask(e: Collected): number {
     (e.enko ? DICT.enko : 0) |
     (e.ko || e.koBacklinks ? DICT.ko : 0) |
     (e.kr || e.krBacklinks ? DICT.kr : 0) |
-    (e.kwen ? DICT.kwen : 0)
+    (e.kwen ? DICT.kwen : 0) |
+    (e.simple ? DICT.simple : 0)
   );
 }
 
@@ -569,6 +595,7 @@ const PART: { [D in ChunkId]: (e: Collected) => DictData[D] | undefined } = {
   ko: (e) => (e.ko || e.koBacklinks ? compact({ entries: e.ko, backlinks: e.koBacklinks }) : undefined),
   kr: (e) => (e.kr || e.krBacklinks ? compact({ entries: e.kr, backlinks: e.krBacklinks }) : undefined),
   kwen: (e) => e.kwen,
+  simple: (e) => e.simple,
   ex: (e) => e.pairs,
 };
 
@@ -677,7 +704,7 @@ function writeIndex() {
 }
 
 function writeMeta(sizes: Record<string, unknown>) {
-  const stats = { headwords: entries.size, wn: 0, en: 0, enko: 0, ko: 0, kr: 0, kwen: 0 };
+  const stats = { headwords: entries.size, wn: 0, en: 0, enko: 0, ko: 0, kr: 0, kwen: 0, simple: 0 };
   for (const e of entries.values()) {
     if (e.wn) stats.wn++;
     if (e.en) stats.en++;
@@ -685,6 +712,7 @@ function writeMeta(sizes: Record<string, unknown>) {
     if (e.ko || e.koBacklinks) stats.ko++;
     if (e.kr || e.krBacklinks) stats.kr++;
     if (e.kwen) stats.kwen++;
+    if (e.simple) stats.simple++;
   }
   fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ builtAt: new Date().toISOString(), stats, sizes }, null, 2));
   console.log("stats", stats);
@@ -695,6 +723,7 @@ loadWordNet();
 await loadWiktEnglish();
 await loadWiktKorean();
 await loadKoWiktEnglish();
+await loadSimpleWikt();
 loadKrdict();
 loadFrequency();
 loadTatoeba();

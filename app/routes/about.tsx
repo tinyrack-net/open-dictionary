@@ -16,6 +16,7 @@ export function meta({ params }: Route.MetaArgs) {
 export default function About() {
   const t = useT();
   const sources: { name: string; url: string; license: string; licenseUrl?: string; use: string }[] = [
+    { name: "Simple English Wiktionary (kaikki.org)", url: "https://kaikki.org/simplewiktionary/English/", license: "CC BY-SA 4.0", use: t.aboutUse.simple },
     { name: "Open English WordNet 2025", url: "https://en-word.net/", license: "CC BY 4.0", use: t.aboutUse.wn },
     { name: "English Wiktionary (kaikki.org)", url: "https://kaikki.org/dictionary/English/", license: "CC BY-SA 4.0", use: t.aboutUse.en },
     { name: "English Wiktionary: Korean (kaikki.org)", url: "https://kaikki.org/dictionary/Korean/", license: "CC BY-SA 4.0", use: t.aboutUse.ko },

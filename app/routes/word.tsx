@@ -15,7 +15,7 @@ import { addRecent } from "~/lib/history";
 import { posLabel, STRINGS, useT } from "~/lib/i18n";
 import { DICT, type DictId } from "~/lib/keys";
 import { DICTIONARIES, isLang, parseDicts, useSettings } from "~/lib/settings";
-import { LICENSE_URL } from "~/lib/dicts";
+import { LICENSE_URL, wantsPairs } from "~/lib/dicts";
 import type { Backlink, DictEntry, Entry, SentencePair } from "~/lib/types";
 
 // /{lang}/word?word=<headword>&dicts=<slugs>&theme=<theme>
@@ -110,7 +110,7 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
     .map((id) => ({ id, ...sourceContent(entry, id) }))
     .filter((s) => s.entries?.length || s.backlinks?.length);
   // bilingual example sentences go with any dictionary that pairs English and Korean
-  const pairs = settings.dicts.some((d) => d !== "wn" && d !== "en") ? entry.pairs : undefined;
+  const pairs = wantsPairs(settings.dicts) ? entry.pairs : undefined;
   const available = DICTIONARIES.filter((d) => mask & DICT[d.id]);
   const korean = /[\uac00-\ud7af]/.test(entry.w);
   const heading = headingFor(entry, word);

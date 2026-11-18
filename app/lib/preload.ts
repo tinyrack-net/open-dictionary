@@ -8,7 +8,7 @@
 // change to hashing, shard counts or dictionary slugs that isn't mirrored here fails the tests.
 import { dataUrl } from "./dataVersion.ts";
 import { SHARDS } from "./keys.ts";
-import { DICTIONARIES } from "./dicts.ts";
+import { DICTIONARIES, ENGLISH_ONLY } from "./dicts.ts";
 
 export function preloadScript(): string {
   const slugs = Object.fromEntries(DICTIONARIES.map((d) => [d.slug, d.id]));
@@ -19,7 +19,7 @@ export function preloadScript(): string {
     var q = new URLSearchParams(location.search);
     var word = (q.get("word") || "").normalize("NFC").trim().toLowerCase();
     if (!word) return;
-    var SHARDS = ${JSON.stringify(SHARDS)}, SLUGS = ${JSON.stringify(slugs)}, ALL = ${JSON.stringify(all)}, BASE = ${JSON.stringify(dataUrl(""))};
+    var SHARDS = ${JSON.stringify(SHARDS)}, ENGLISH_ONLY = ${JSON.stringify(ENGLISH_ONLY)}, SLUGS = ${JSON.stringify(slugs)}, ALL = ${JSON.stringify(all)}, BASE = ${JSON.stringify(dataUrl(""))};
     var d = q.get("dicts"), dicts = ALL;
     if (d !== null) { dicts = []; d.split(",").forEach(function (s) { var id = SLUGS[s.trim()]; if (id && dicts.indexOf(id) < 0) dicts.push(id); }); }
     var h = 0x811c9dc5;
@@ -27,7 +27,7 @@ export function preloadScript(): string {
     h = h >>> 0;
     function shard(n) { var w = Math.max(1, (n - 1).toString(16).length), s = (h % n).toString(16); while (s.length < w) s = "0" + s; return s; }
     var ids = dicts.slice();
-    if (dicts.some(function (id) { return id !== "wn" && id !== "en"; })) ids.push("ex");
+    if (dicts.some(function (id) { return ENGLISH_ONLY.indexOf(id) < 0; })) ids.push("ex");
     var paths = ["i/manifest.json"].concat(ids.map(function (id) { return "d/" + id + "/" + shard(SHARDS[id]) + ".json"; }));
     var out = (window.__odPreload = {});
     // A request cancelled by leaving the page (reload, back) rejects; nothing may be waiting on it

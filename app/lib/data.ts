@@ -10,6 +10,7 @@
 import { DATA_VERSION, dataUrl, VERSION_URL } from "./dataVersion.ts";
 import { type ChunkId, DICT, type DictId, entryKey, foldKey, rankScore, SHARDS, shardOf } from "./keys.ts";
 import type { DictData, Entry, IndexRow } from "./types.ts";
+import { wantsPairs } from "./dicts.ts";
 
 declare global {
   interface Window {
@@ -122,8 +123,6 @@ export interface LoadedEntry {
   mask: number;
 }
 
-/** Sentence pairs are bilingual, so they are shown with any English–Korean dictionary (all but the two English-only ones). */
-const wantsPairs = (dicts: DictId[]) => dicts.some((d) => d !== "wn" && d !== "en");
 
 /** Data paths a lookup will need: index + chunks for the selected dictionaries. */
 export function lookupPaths(word: string, dicts: DictId[]): string[] {
@@ -147,13 +146,14 @@ export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEnt
     ko: want("ko", dicts.includes("ko")),
     kr: want("kr", dicts.includes("kr")),
     kwen: want("kwen", dicts.includes("kwen")),
+    simple: want("simple", dicts.includes("simple")),
     ex: want("ex", wantsPairs(dicts)),
   };
   const row = await lookup(word);
   if (!row) return null;
   const [w, mask] = row;
   const entry: Entry = { w };
-  const [wn, en, enko, ko, kr, kwen, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.kr, parts.kwen, parts.ex]);
+  const [wn, en, enko, ko, kr, kwen, simple, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.kr, parts.kwen, parts.simple, parts.ex]);
   if (wn && mask & DICT.wn) entry.wn = wn;
   if (en && mask & DICT.en) entry.en = en;
   if (enko && mask & DICT.enko) entry.enko = enko;
@@ -166,6 +166,7 @@ export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEnt
     if (kr.backlinks) entry.krBacklinks = kr.backlinks;
   }
   if (kwen && mask & DICT.kwen) entry.kwen = kwen;
+  if (simple && mask & DICT.simple) entry.simple = simple;
   if (ex) entry.pairs = ex;
   return { entry, mask };
 }
@@ -252,6 +253,6 @@ export async function search(query: string, limit = 10, mask = 0xff): Promise<In
 
 export interface Meta {
   builtAt: string;
-  stats: { headwords: number; wn: number; en: number; enko: number; ko: number; kr: number; kwen: number };
+  stats: { headwords: number; wn: number; en: number; enko: number; ko: number; kr: number; kwen: number; simple: number };
 }
 export const getMeta = () => cached<Meta>("meta.json");

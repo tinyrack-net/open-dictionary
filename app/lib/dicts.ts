@@ -16,6 +16,7 @@ export const LICENSE_URL: Record<string, string> = {
 };
 
 export const DICTIONARIES: { id: DictId; slug: string; short: string; source: string; license: string; url: string }[] = [
+  { id: "simple", slug: "simple-wiktionary", short: "SW", source: "Simple English Wiktionary · kaikki.org", license: "CC BY-SA 4.0", url: "https://kaikki.org/simplewiktionary/English/" },
   { id: "wn", slug: "wordnet", short: "WN", source: "Open English WordNet 2025", license: "CC BY 4.0", url: "https://en-word.net/" },
   { id: "en", slug: "wiktionary", short: "WK", source: "English Wiktionary · kaikki.org", license: "CC BY-SA 4.0", url: "https://kaikki.org/dictionary/English/" },
   { id: "kwen", slug: "en-ko-kowiktionary", short: "EN→KO·KW", source: "한국어 위키낱말사전 · kaikki.org", license: "CC BY-SA 4.0", url: "https://kaikki.org/kowiktionary/" },
@@ -24,6 +25,13 @@ export const DICTIONARIES: { id: DictId; slug: string; short: string; source: st
   { id: "ko", slug: "ko-en", short: "KO→EN", source: "English Wiktionary · kaikki.org", license: "CC BY-SA 4.0", url: "https://kaikki.org/dictionary/Korean/" },
 ];
 export const ALL_DICTS: DictId[] = DICTIONARIES.map((d) => d.id);
+
+/**
+ * English-only dictionaries. Bilingual example sentences (Tatoeba) are shown with any other, i.e.
+ * any dictionary that pairs English and Korean.
+ */
+export const ENGLISH_ONLY: DictId[] = ["simple", "wn", "en"];
+export const wantsPairs = (dicts: DictId[]) => dicts.some((d) => !ENGLISH_ONLY.includes(d));
 const bySlug = new Map(DICTIONARIES.map((d) => [d.slug, d.id]));
 export const slugOf = new Map(DICTIONARIES.map((d) => [d.id, d.slug]));
 

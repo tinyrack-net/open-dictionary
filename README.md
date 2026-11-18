@@ -8,6 +8,7 @@ Tailwind CSS. It is hosted on Cloudflare Workers static assets.
 
 | Dictionary | `dicts` slug | Source | License |
 |---|---|---|---|
+| English (Simple English Wiktionary) | `simple-wiktionary` | [Simple English Wiktionary](https://simple.wiktionary.org/) via [kaikki.org](https://kaikki.org/simplewiktionary/): learner's definitions in plain English | CC BY-SA 4.0 |
 | English (WordNet) | `wordnet` | [Open English WordNet 2025](https://en-word.net/) | CC BY 4.0 |
 | English (Wiktionary) | `wiktionary` | [English Wiktionary](https://en.wiktionary.org/) via [kaikki.org](https://kaikki.org/) | CC BY-SA 4.0 |
 | English → Korean (Korean Wiktionary) | `en-ko-kowiktionary` | English entries in [Korean Wiktionary](https://ko.wiktionary.org/), defined in Korean, via [kaikki.org](https://kaikki.org/kowiktionary/) | CC BY-SA 4.0 |
@@ -81,6 +82,7 @@ data/site/
   d/ko/<shard>.json        Korean entries + translation backlinks              (256 chunks)
   d/kr/<shard>.json        한국어기초사전 entries + English equivalent backlinks  (512 chunks)
   d/kwen/<shard>.json      Korean Wiktionary English entries                   (32 chunks)
+  d/simple/<shard>.json    Simple English Wiktionary entries                   (128 chunks)
   d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (64 chunks)
   d/<id>/x/<hash>.json     a single headword too large for a shared chunk      (60 files)
   version.txt              content hash of all the files above

@@ -39,6 +39,7 @@ export const DICT = {
   ko: 8, // Wiktionary Korean entries + reverse translations (KO->EN)
   kr: 16, // 한국어기초사전 (NIKL): Korean entries with Korean definitions and English equivalents, + reverse lookup (KO->KO/EN)
   kwen: 32, // Korean Wiktionary, English entries defined in Korean (EN->KO)
+  simple: 64, // Simple English Wiktionary: learner's definitions in plain English (EN-EN)
 } as const;
 export type DictId = keyof typeof DICT;
 
@@ -49,7 +50,7 @@ export type ChunkId = DictId | "ex";
  * Number of chunk files per data set (data/site/d/<id>/<shard>.json).
  * Sized so one chunk is ~200 KB raw / ~50 KB compressed with the complete (uncapped) data.
  */
-export const SHARDS: Record<ChunkId, number> = { wn: 256, en: 4096, enko: 32, ko: 256, kr: 512, kwen: 32, ex: 64 };
+export const SHARDS: Record<ChunkId, number> = { wn: 256, en: 4096, enko: 32, ko: 256, kr: 512, kwen: 32, simple: 128, ex: 64 };
 
 /** Ranking for prefix matches: lower is better (common, well-covered, short, plain words first). */
 export function rankScore([w, m, f]: [string, number, number?]): number {
@@ -57,6 +58,7 @@ export function rankScore([w, m, f]: [string, number, number?]): number {
   // Zipf x10: "love" 58 -> -29, a rare word 25 -> -12
   if (f) s -= f / 2;
   if (m & DICT.wn) s -= 20;
+  if (m & DICT.simple) s -= 10;
   if (m & DICT.ko || m & DICT.kr) s -= 15;
   if (m & DICT.kwen) s -= 5;
   if (m & DICT.enko) s -= 5;

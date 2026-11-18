@@ -1,5 +1,6 @@
 // Downloads the raw sources into ./raw (≈ 700 MB compressed):
-//   Wiktionary (kaikki.org: English edition, and the Korean edition's English entries), Open English
+//   Wiktionary (kaikki.org: English edition, Simple English edition, and the Korean edition's English
+//   entries), Open English
 //   WordNet, 한국어기초사전 (NIKL), Tatoeba English–Korean sentences, and the wordfreq frequency lists
 //   (exported to raw/wordfreq.json with uv + Python).
 import { execFileSync } from "node:child_process";
@@ -13,6 +14,8 @@ const files = [
   // kaikki.org serves gzip when asked; the compressed stream is stored as-is
   { out: "en.jsonl.gz", url: "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl", gzip: true },
   { out: "ko.jsonl.gz", url: "https://kaikki.org/dictionary/Korean/kaikki.org-dictionary-Korean.jsonl", gzip: true },
+  // Simple English Wiktionary (simple.wiktionary.org): learner's definitions in plain English
+  { out: "simple.jsonl.gz", url: "https://kaikki.org/simplewiktionary/English/kaikki.org-dictionary-English.jsonl", gzip: true },
   // Korean Wiktionary (ko.wiktionary.org): its English entries, defined in Korean
   { out: "kowikt-en.jsonl.gz", url: "https://kaikki.org/kowiktionary/%EC%98%81%EC%96%B4/kaikki.org-dictionary-%EC%98%81%EC%96%B4.jsonl", gzip: true },
   { out: "oewn.zip", url: "https://github.com/globalwordnet/english-wordnet/releases/download/2025-edition/english-wordnet-2025-json.zip" },

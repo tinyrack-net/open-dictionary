@@ -42,6 +42,9 @@ export const TAG_KO: Record<string, string> = {
   uncountable: "불가산",
   transitive: "타동사",
   intransitive: "자동사",
+  // Simple English Wiktionary writes combined labels as one tag
+  "countable & uncountable": "가산·불가산",
+  "transitive & intransitive": "타동사·자동사",
   ambitransitive: "자·타동사",
   attributive: "한정적",
   determiner: "한정사",
