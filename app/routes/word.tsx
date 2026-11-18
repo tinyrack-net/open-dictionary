@@ -14,7 +14,7 @@ import { getEntry, search, setLoadingUrl } from "~/lib/data";
 import { addRecent } from "~/lib/history";
 import { posLabel, STRINGS, useT } from "~/lib/i18n";
 import { DICT, type DictId } from "~/lib/keys";
-import { DICTIONARIES, isLang, parseDicts, useSettings } from "~/lib/settings";
+import { DICTIONARIES, isLang, parseDicts, useHydrated, useSettings } from "~/lib/settings";
 import { LICENSE_URL, wantsPairs } from "~/lib/dicts";
 import type { Backlink, DictEntry, Entry, SentencePair } from "~/lib/types";
 
@@ -231,6 +231,7 @@ function Pairs({ pairs, korean }: { pairs: SentencePair[]; korean: boolean }) {
 function NotFound({ word, suggestions }: { word: string; suggestions: string[] }) {
   const t = useT();
   const settings = useSettings();
+  const offline = useHydrated() && !navigator.onLine;
   return (
     <article className="mx-auto flex max-w-tinyrack-mdx-content-width flex-col gap-tinyrack-lg py-tinyrack-2xl">
       {word && (
@@ -239,7 +240,8 @@ function NotFound({ word, suggestions }: { word: string; suggestions: string[] }
         </TRText>
       )}
       <TRAlert.Root variant="neutral">
-        <TRAlert.Title>{t.notFound}</TRAlert.Title>
+        {/* offline (PWA): an uncached word can't load, which is not the same as not existing */}
+        <TRAlert.Title>{offline ? t.offline : t.notFound}</TRAlert.Title>
         {suggestions.length > 0 && (
           <TRAlert.Description render={<TRText as="span" className="flex flex-wrap items-center gap-tinyrack-xs" />}>
             {t.didYouMean}:

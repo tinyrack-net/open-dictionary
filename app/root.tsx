@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration, useParams } from "react-router";
 import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRText } from "@tinyrack/ui/components/text";
@@ -5,6 +6,7 @@ import type { Route } from "./+types/root";
 import { NavigationProgress } from "./components/NavigationProgress";
 import { STRINGS } from "./lib/i18n";
 import { preloadScript } from "./lib/preload";
+import { registerServiceWorker } from "./lib/pwa";
 import { DEFAULT_LANG, isLang, THEME_SCRIPT, useApplyTheme } from "./lib/settings";
 import "./app.css";
 
@@ -23,6 +25,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* tinyrack-check-ignore-next-line components/no-raw-html -- trusted: starts the word page's data requests before the app loads */}
         <script dangerouslySetInnerHTML={{ __html: PRELOAD_SCRIPT }} />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        {/* PWA: installable app (public/manifest.webmanifest, service worker from scripts/sw.template.js) */}
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Dictionary" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <Meta />
         <Links />
       </head>
@@ -37,6 +47,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useApplyTheme();
+  useEffect(registerServiceWorker, []);
   return (
     <>
       <NavigationProgress />

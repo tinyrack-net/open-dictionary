@@ -9,3 +9,11 @@
 /data/version.txt
   ! Cache-Control
   Cache-Control: no-cache
+
+# The service worker must be revalidated so a deploy reaches installed apps (scripts/sw.template.js)
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache

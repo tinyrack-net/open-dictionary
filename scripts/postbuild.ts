@@ -1,6 +1,7 @@
 // Prepares build/client for Cloudflare Workers static assets.
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CLIENT = path.join(ROOT, "build", "client");
@@ -26,7 +27,34 @@ if (!bundles.some((f) => fs.readFileSync(path.join(CLIENT, "assets", f), "utf8")
   throw new Error(`postbuild: the app bundle doesn't reference data version ${version}; rebuild the app`);
 console.log(`postbuild: copied data/site -> build/client/data/${version} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
-// 2. Report the static asset budget per top-level directory.
+// 2. Service worker (PWA): scripts/sw.template.js with this build's precache list and versions.
+//    Precached: every prerendered page and its .data file, the app's JS and CSS, and the icons. Fonts
+//    (~280 unicode-range files) and dictionary data are cached on first use instead.
+{
+  const list = (dir: string, base = ""): string[] =>
+    fs.readdirSync(path.join(CLIENT, dir), { withFileTypes: true }).flatMap((e) => {
+      const rel = `${base}/${e.name}`;
+      if (e.isDirectory()) return rel === "/data" ? [] : list(path.join(dir, e.name), rel);
+      return [rel];
+    });
+  const files = list("");
+  // pages by the clean URL the host serves them at (/en/word/index.html -> /en/word, /index.html -> /)
+  const pages = files.filter((f) => f.endsWith("/index.html")).map((f) => f.slice(0, -"/index.html".length) || "/");
+  const precache = [
+    ...pages,
+    ...files.filter((f) => f.endsWith(".data") || /^\/assets\/.*\.(js|css)$/.test(f) || f.startsWith("/icons/") || f === "/manifest.webmanifest" || f === "/favicon.svg"),
+  ];
+  const build = crypto.createHash("sha256").update(version).update(precache.join("\n")).update(bundles.join("\n")).digest("hex").slice(0, 12);
+  const sw = fs
+    .readFileSync(path.join(ROOT, "scripts", "sw.template.js"), "utf8")
+    .replace("__BUILD__", build)
+    .replace("__DATA_VERSION__", version)
+    .replace("__PRECACHE__", JSON.stringify(precache));
+  fs.writeFileSync(path.join(CLIENT, "sw.js"), sw);
+  console.log(`postbuild: sw.js (build ${build}) precaches ${precache.length} files`);
+}
+
+// 3. Report the static asset budget per top-level directory.
 const usage = new Map<string, { files: number; bytes: number }>();
 let largest = 0;
 // group by first path segment, or two segments under data/ (e.g. data/d, data/i)
