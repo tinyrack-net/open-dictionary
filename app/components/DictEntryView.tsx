@@ -131,34 +131,40 @@ function RelationLists({ relations }: { relations?: Relations }) {
   );
 }
 
+/**
+ * Examples as one quoted block: a single continuous bar on the left, the examples spaced apart inside
+ * it, and each citation in small type under its quote.
+ */
 function Examples({ examples }: { examples: Example[] }) {
   return (
     <TRText as="span" className="flex flex-col gap-tinyrack-xs">
       <Collapsed items={examples} limit={3}>
-        {(shown) =>
-          shown.map((x, i) => (
-            <blockquote key={i} className="border-l-tinyrack-strong border-tinyrack-border pl-tinyrack-md">
-              <TRText as="p" variant="bodySm">
-                {x.text}
-              </TRText>
-              {x.roman && (
-                <TRText as="p" variant="bodySm" color="muted">
-                  <TRText as="i">{x.roman}</TRText>
+        {(shown) => (
+          <TRText as="span" className="flex flex-col gap-tinyrack-sm border-l-tinyrack-strong border-tinyrack-border pl-tinyrack-md">
+            {shown.map((x, i) => (
+              <blockquote key={i} className="flex flex-col gap-tinyrack-2xs">
+                <TRText as="p" variant="bodySm" className="leading-tinyrack-lg">
+                  {x.text}
                 </TRText>
-              )}
-              {x.translation && (
-                <TRText as="p" variant="bodySm" color="muted">
-                  {x.translation}
-                </TRText>
-              )}
-              {x.ref && (
-                <TRText as="p" variant="caption" color="muted">
-                  {x.ref}
-                </TRText>
-              )}
-            </blockquote>
-          ))
-        }
+                {x.roman && (
+                  <TRText as="p" variant="bodySm" color="muted" className="leading-tinyrack-lg">
+                    <TRText as="i">{x.roman}</TRText>
+                  </TRText>
+                )}
+                {x.translation && (
+                  <TRText as="p" variant="bodySm" color="muted" className="leading-tinyrack-lg">
+                    {x.translation}
+                  </TRText>
+                )}
+                {x.ref && (
+                  <TRText as="p" variant="caption" color="muted" className="leading-tinyrack-md">
+                    {x.ref}
+                  </TRText>
+                )}
+              </blockquote>
+            ))}
+          </TRText>
+        )}
       </Collapsed>
     </TRText>
   );
@@ -191,7 +197,7 @@ function Translations({ translations }: { translations: Translation[] }) {
 /** The body of a sense: examples and word lists, shown under its gloss. */
 function SenseDetail({ sense }: { sense: Sense }) {
   return (
-    <TRText as="span" className="flex flex-col gap-tinyrack-sm">
+    <TRText as="span" className="flex flex-col gap-tinyrack-md">
       {sense.examples && <Examples examples={sense.examples} />}
       <RelationLists relations={sense.relations} />
     </TRText>
@@ -229,7 +235,7 @@ function Senses({ senses }: { senses: Sense[] }) {
       {(shown) => (
         <ol className="divide-y-tinyrack-default divide-tinyrack-border">
           {shown.map((s, i) => (
-            <li key={i} className="flex flex-col gap-tinyrack-xs py-tinyrack-sm pr-tinyrack-md">
+            <li key={i} className="flex flex-col gap-tinyrack-sm py-tinyrack-lg pr-tinyrack-md first:pt-tinyrack-sm">
               <SenseText sense={s} n={i + 1} />
               {s.translations && (
                 <TRText as="span" className="pl-tinyrack-xl">
@@ -291,7 +297,12 @@ export function DictEntryView({ entry, numbered, heading }: { entry: DictEntry; 
         </TRCollapsible.Root>
       ))}
       {entry.senses.length > 0 && <Senses senses={entry.senses} />}
-      <RelationLists relations={entry.relations} />
+      {entry.relations && (
+        // word lists for the whole entry, set apart from the last sense
+        <TRText as="span" className="flex flex-col gap-tinyrack-xs border-t-tinyrack-default border-tinyrack-border pt-tinyrack-md">
+          <RelationLists relations={entry.relations} />
+        </TRText>
+      )}
       {entry.etymology && (
         <TRCollapsible.Root>
           <TRCollapsible.Trigger>{t.etymology}</TRCollapsible.Trigger>
