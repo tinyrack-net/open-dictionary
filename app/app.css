@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 /* IBM Plex, the Tinyrack typeface. Only the weights Tinyrack tokens use (400 regular, 600 medium,
-   650/700 heading/bold); Korean is split into ~100 unicode-range files so a page loads only what it shows. */
+   650/700 heading/bold); Korean and Japanese are split into unicode-range files so a page loads only what it shows.
+   Japanese has 400 and 700 only (each weight is ~120 files; the free plan allows 20,000 in total). */
 @import "@fontsource/ibm-plex-sans/latin-400.css";
 @import "@fontsource/ibm-plex-sans/latin-600.css";
 @import "@fontsource/ibm-plex-sans/latin-700.css";
@@ -9,6 +10,8 @@
 @import "@fontsource/ibm-plex-sans-kr/400.css";
 @import "@fontsource/ibm-plex-sans-kr/600.css";
 @import "@fontsource/ibm-plex-sans-kr/700.css";
+@import "@fontsource/ibm-plex-sans-jp/400.css";
+@import "@fontsource/ibm-plex-sans-jp/700.css";
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 
 @import "@tinyrack/ui/core.css";
@@ -18,13 +21,15 @@
 @import "@tinyrack/ui/components/button.css";
 @import "@tinyrack/ui/components/card.css";
 @import "@tinyrack/ui/components/collapsible.css";
+@import "@tinyrack/ui/components/dialog.css";
 @import "@tinyrack/ui/components/icon-button.css";
 @import "@tinyrack/ui/components/input.css";
 @import "@tinyrack/ui/components/link.css";
 @import "@tinyrack/ui/components/link-button.css";
-@import "@tinyrack/ui/components/menu.css";
 @import "@tinyrack/ui/components/progress.css";
 @import "@tinyrack/ui/components/skeleton.css";
+@import "@tinyrack/ui/components/native-select.css";
+@import "@tinyrack/ui/components/switch.css";
 @import "@tinyrack/ui/components/text.css";
 
 @source "./**/*.{ts,tsx}";
@@ -47,6 +52,11 @@
   --tr-progress-background: transparent;
   --tr-progress-fill: var(--tinyrack-primary);
   --tr-progress-radius: 0;
+}
+
+/* Settings dialog: wide enough for the dictionary list. */
+@utility settings-dialog {
+  --tr-dialog-box-max-width: var(--tinyrack-overlay-width-md);
 }
 
 /* Long text (definitions, examples) reads best at a limited line length. */

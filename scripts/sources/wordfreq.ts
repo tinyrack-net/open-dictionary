@@ -10,6 +10,8 @@ import type { Source } from "../lib/source.ts";
 /** wordfreq list per language, and how to tell a headword is in that language. */
 const LANGS: { lang: string; list: string; test: (key: string) => boolean }[] = [
   { lang: "ko", list: "small_ko", test: (k) => /[\uac00-\ud7af]/.test(k) },
+  // kana or CJK ideographs (kanji): Japanese; CJK-only words that are Korean hanja forms are rare as keys
+  { lang: "ja", list: "large_ja", test: (k) => /[\u3040-\u30ff\u4e00-\u9fff]/.test(k) },
   { lang: "en", list: "large_en", test: () => true },
 ];
 

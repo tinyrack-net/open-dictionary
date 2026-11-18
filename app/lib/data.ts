@@ -10,8 +10,8 @@
 // and readJson reuses them.
 import { DATA_SHARDS, DATA_VERSION, dataUrl, VERSION_URL } from "./dataVersion.ts";
 import { ALL_DICTS, type DictId, dictMask, maskHas, maskOverlaps, rankScore } from "./dicts.ts";
-import { entryKey, foldKey, shardOf } from "./keys.ts";
-import type { DictPart, Entry, IndexRow } from "./types.ts";
+import { entryKey, foldKey, sentenceShard, shardOf } from "./keys.ts";
+import type { DictPart, Entry, IndexRow, Sentence } from "./types.ts";
 
 declare global {
   interface Window {
@@ -163,6 +163,24 @@ export interface Manifest {
   first: string[];
   /** chunk count of each dictionary's data (d/<id>/<shard>.json) */
   shards: Record<string, number>;
+  /** chunk count of each sentence store (d/<id>/s/<shard>.json) */
+  stores: Record<string, number>;
+}
+
+/**
+ * Sentences of a dictionary's store, by id, in the order given. Fetches only the store chunks these
+ * ids live in (a page of sentences touches a few chunks; they are cached like any other data).
+ */
+export async function getSentences(id: string, ids: number[]): Promise<Sentence[]> {
+  const manifest = await cached<Manifest>("i/manifest.json");
+  const n = manifest?.stores?.[id];
+  if (!n) return [];
+  const chunks = await Promise.all([...new Set(ids.map((sid) => sentenceShard(sid, n)))].map(async (s) => [s, await cached<Record<number, Sentence>>(`d/${id}/s/${s}.json`)] as const));
+  const byShard = new Map(chunks);
+  return ids.flatMap((sid) => {
+    const sentence = byShard.get(sentenceShard(sid, n))?.[sid];
+    return sentence ? [sentence] : [];
+  });
 }
 interface Chunk {
   rows: IndexRow[];

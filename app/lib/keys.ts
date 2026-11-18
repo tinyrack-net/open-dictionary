@@ -30,3 +30,8 @@ export function shardOf(key: string, shards: number): string {
 export function ownFileName(key: string): string {
   return fnv1a(key).toString(16).padStart(8, "0") + "-" + fnv1a(key + "\u0000").toString(16).padStart(8, "0");
 }
+
+/** Sentence store chunk of a sentence id (d/<id>/s/<shard>.json). Ids are dense, so a modulo spreads them evenly. */
+export function sentenceShard(sid: number, shards: number): string {
+  return (sid % shards).toString(16).padStart(Math.max(1, (shards - 1).toString(16).length), "0");
+}

@@ -38,18 +38,24 @@ function audios(o: any): Audio[] {
 /**
  * wiktextract mixes two things in `forms`: the headline forms printed next to the headword (no
  * `source`) and full inflection tables (`source: "conjugation" | "declension" | "inflection"`).
- * They are kept apart, each complete and in source order. Romanizations and alternative scripts
- * (e.g. hanja) are pronunciation and spelling data, stored in `pron` and `alt`.
+ * They are kept apart, each complete and in source order. Romanizations and spellings in another
+ * script (form tags in `altTags`: Korean "hanja", Japanese Wiktionary's "kanji") are pronunciation and
+ * spelling data, stored in `pron` and `alt`.
  */
-const isForm = (f: any) => f.form && !f.tags?.some((t: string) => PARSER_TAGS.has(t) || t === "romanization" || t === "hanja");
-const form = (f: any): Form => compact({ form: f.form, tags: tagsOf(f.tags) });
-function wiktForms(o: any): Form[] {
-  return (o.forms ?? []).filter((f: any) => isForm(f) && !f.source).map(form);
+export interface WiktOptions {
+  /** form tags that mark a spelling in another script (stored in `alt`) */
+  altTags?: string[];
 }
-function wiktTables(o: any): FormTable[] {
+const DEFAULT_ALT = ["hanja"];
+const isForm = (f: any, alt: string[]) => f.form && !f.tags?.some((t: string) => PARSER_TAGS.has(t) || t === "romanization" || alt.includes(t));
+const form = (f: any): Form => compact({ form: f.form, tags: tagsOf(f.tags) });
+function wiktForms(o: any, alt: string[]): Form[] {
+  return (o.forms ?? []).filter((f: any) => isForm(f, alt) && !f.source).map(form);
+}
+function wiktTables(o: any, alt: string[]): FormTable[] {
   const tables = new Map<string, Form[]>();
   for (const f of o.forms ?? []) {
-    if (!isForm(f) || !f.source) continue;
+    if (!isForm(f, alt) || !f.source) continue;
     tables.set(f.source, [...(tables.get(f.source) ?? []), form(f)]);
   }
   return [...tables].map(([kind, forms]) => ({ kind, forms }));
@@ -89,19 +95,20 @@ function wiktSenses(o: any): Sense[] {
 }
 
 /** One wiktextract line (headword × part of speech × etymology) as a neutral entry. */
-export function wiktEntry(o: any): DictEntry {
+export function wiktEntry(o: any, opts: WiktOptions = {}): DictEntry {
+  const alt = opts.altTags ?? DEFAULT_ALT;
   return compact({
     word: o.word,
     pos: o.pos,
     etym: o.etymology_number ? Number(o.etymology_number) : undefined,
-    alt: (o.forms ?? []).filter((f: any) => f.tags?.includes("hanja")).map((f: any) => f.form),
+    alt: (o.forms ?? []).filter((f: any) => f.tags?.some((t: string) => alt.includes(t))).map((f: any) => f.form),
     pron: [
       ...prons(o),
       ...(o.forms ?? []).filter((f: any) => f.tags?.includes("romanization")).map((f: any): Pron => ({ text: f.form, kind: "romanization" })),
     ],
     audio: audios(o),
-    forms: wiktForms(o),
-    tables: wiktTables(o),
+    forms: wiktForms(o, alt),
+    tables: wiktTables(o, alt),
     etymology: etymologyText(o.etymology_text ?? o.etymology_texts?.join("\n")),
     senses: wiktSenses(o),
     relations: wiktRelations(o),
@@ -116,14 +123,14 @@ export async function loadWiktionary(
   id: string,
   file: string,
   lang: string,
-  opts: { prepare?: (o: any) => any; each?: (o: any, entry: DictEntry) => void } = {},
+  opts: WiktOptions & { prepare?: (o: any) => any; each?: (o: any, entry: DictEntry) => void } = {},
 ): Promise<number> {
   const { jsonl, addEntry } = await import("./core.ts");
   let count = 0;
   for await (const line of jsonl(file)) {
     if (!line.word || line.lang_code !== lang) continue;
     const o = opts.prepare ? opts.prepare(line) : line;
-    const entry = wiktEntry(o);
+    const entry = wiktEntry(o, opts);
     if (!entry.senses?.length) continue;
     addEntry(id, entry);
     opts.each?.(o, entry);

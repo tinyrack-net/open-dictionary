@@ -191,6 +191,9 @@ importers:
       '@fontsource/ibm-plex-sans':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource/ibm-plex-sans-jp':
+        specifier: ^5.3.1
+        version: 5.3.1
       '@fontsource/ibm-plex-sans-kr':
         specifier: ^5.3.0
         version: 5.3.0
@@ -561,6 +564,9 @@ packages:
 
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
+
+  '@fontsource/ibm-plex-sans-jp@5.3.1':
+    resolution: {integrity: sha512-lFejXBGcWN/htaffKJryghb/zd2WKwFKyJWJRTcRP57/HUAGEdjNHI0UtIUN8pv4A5F9hPBxZ0dY8oILd88xIA==}
 
   '@fontsource/ibm-plex-sans-kr@5.3.0':
     resolution: {integrity: sha512-Malq1TQAnpPHASG76fAthnCY0E41py2r7pZ5JEjgmGfA5tVGz7gwBfvrkhPvT3ZmyMobQrJakHhKZVuXQp7FjQ==}
@@ -1774,6 +1780,8 @@ snapshots:
   '@floating-ui/utils@0.2.12': {}
 
   '@fontsource/ibm-plex-mono@5.3.0': {}
+
+  '@fontsource/ibm-plex-sans-jp@5.3.1': {}
 
   '@fontsource/ibm-plex-sans-kr@5.3.0': {}
 

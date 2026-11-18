@@ -1,32 +1,39 @@
 # Open Dictionary
 
-A free dictionary built only from openly licensed data, shown exactly as each source wrote it.
+A free English, Korean and Japanese dictionary built only from openly licensed data, shown exactly as each
+source wrote it.
 Static site, installable as an offline-capable app (PWA).
 
 **https://dictionary.tinyrack.net**
 
 ## Dictionaries
 
-| Dictionary | Source | License |
-|---|---|---|
-| English (Simple English Wiktionary) | [Simple English Wiktionary](https://simple.wiktionary.org/) via [kaikki.org](https://kaikki.org/simplewiktionary/) | CC BY-SA 4.0 |
-| English (WordNet) | [Open English WordNet 2025](https://en-word.net/) | CC BY 4.0 |
-| English (Wiktionary) | [English Wiktionary](https://en.wiktionary.org/) via [kaikki.org](https://kaikki.org/) | CC BY-SA 4.0 |
-| English → Korean (Korean Wiktionary) | [Korean Wiktionary](https://ko.wiktionary.org/) via [kaikki.org](https://kaikki.org/kowiktionary/) | CC BY-SA 4.0 |
-| English → Korean | Korean translations in English Wiktionary | CC BY-SA 4.0 |
-| Korean (Basic Korean Dictionary) | [한국어기초사전](https://krdict.korean.go.kr/) © 국립국어원, text only | CC BY-SA 2.0 KR |
-| Korean → English | Korean entries in English Wiktionary | CC BY-SA 4.0 |
-| Example sentences | [Tatoeba](https://tatoeba.org/) | CC BY 2.0 FR |
+| Languages | Dictionary | Source | License |
+|---|---|---|---|
+| English–English | Simple English Wiktionary | [Simple English Wiktionary](https://simple.wiktionary.org/) via [kaikki.org](https://kaikki.org/) | CC BY-SA 4.0 |
+| English–English | WordNet | [Open English WordNet 2025](https://en-word.net/) | CC BY 4.0 |
+| English–English | Wiktionary | [English Wiktionary](https://en.wiktionary.org/) via [kaikki.org](https://kaikki.org/) | CC BY-SA 4.0 |
+| English–Korean | Korean Wiktionary | [Korean Wiktionary](https://ko.wiktionary.org/) via kaikki.org | CC BY-SA 4.0 |
+| English–Korean, English–Japanese | Wiktionary translations | English Wiktionary | CC BY-SA 4.0 |
+| Korean–Korean | Basic Korean Dictionary | [한국어기초사전](https://krdict.korean.go.kr/) © 국립국어원, text only | CC BY-SA 2.0 KR |
+| Korean–English | Wiktionary | English Wiktionary | CC BY-SA 4.0 |
+| Japanese–Japanese | Japanese Wiktionary | [ウィクショナリー日本語版](https://ja.wiktionary.org/) via kaikki.org | CC BY-SA 4.0 |
+| Japanese–English | JMdict | [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project) © EDRDG, via [jmdict-simplified](https://github.com/scriptin/jmdict-simplified) | CC BY-SA 4.0 |
+| Japanese–English | Wiktionary | English Wiktionary | CC BY-SA 4.0 |
+| Japanese–Korean | Korean Wiktionary | Korean Wiktionary | CC BY-SA 4.0 |
+| Sentences | Tatoeba | [Tatoeba](https://tatoeba.org/): English, Korean and Japanese with translations | CC BY 2.0 FR |
 
 Search ranking uses [wordfreq](https://github.com/rspeer/wordfreq) (CC BY-SA 4.0). Recordings are played from
 [Wikimedia Commons](https://commons.wikimedia.org/), each under its own license.
+
+Readers choose which dictionaries are shown and in what order in Settings; the choice is kept in the URL.
 
 ## Adding a dictionary
 
 A dictionary is data plus one registry entry. Nothing else in the app names dictionaries.
 
-1. **Register it** in `app/lib/dicts.ts` (`DICTIONARIES`): id, headword and definition languages, names,
-   description, source, license.
+1. **Register it** in `app/lib/dicts.ts` (`DICTIONARIES`): id, headword and definition languages (shown as
+   the language pair, e.g. English–Korean), name, description, source, license.
 2. **Convert it** in `scripts/sources/<name>.ts` (contract: `scripts/lib/source.ts`): `fetch()` downloads raw
    files, `build()` converts them into the neutral format (`app/lib/types.ts`), then list it in
    `scripts/sources/index.ts`. Sources from Wiktionary reuse `scripts/lib/wiktextract.ts`.
@@ -37,7 +44,8 @@ The word page, settings, search, about page, chunk sizes and offline cache all f
 Converters copy, they don't compose: same entries, order, glosses, examples and tags; nothing merged,
 summarized, ranked, truncated or invented. The renderer has no per-dictionary code.
 
-**A new UI language** is a file in `app/locales/` (same keys as `en.ts`) and an entry in `LANGS`.
+**A new language** of dictionaries needs nothing more. To show the UI in it, add a file in `app/locales/` (same keys as
+`en.ts`) and an entry in `LANGS`; for its example sentences, add it to `scripts/sources/tatoeba.ts`.
 
 ## Development
 
@@ -45,8 +53,8 @@ Requires Node 22.18+, pnpm, curl, bunzip2 and [uv](https://docs.astral.sh/uv/) (
 
 ```sh
 pnpm install
-pnpm fetch-data   # downloads every source into raw/ (~700 MB)
-pnpm build-data   # converts raw/ into data/site (~3 min, ~8 GB RAM)
+pnpm fetch-data   # downloads every source into raw/ (~900 MB)
+pnpm build-data   # converts raw/ into data/site (~4 min, ~6 GB RAM)
 pnpm dev          # dev server with the built data
 pnpm test         # data fidelity checks (skipped without data) and unit tests
 pnpm typecheck && pnpm check:design

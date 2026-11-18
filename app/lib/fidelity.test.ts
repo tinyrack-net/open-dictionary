@@ -7,7 +7,7 @@ import readline from "node:readline";
 import { test } from "node:test";
 import zlib from "node:zlib";
 import { TAG_KO } from "../locales/tags.ko.ts";
-import { entryKey, shardOf } from "./keys.ts";
+import { entryKey, sentenceShard, shardOf } from "./keys.ts";
 import type { DictEntry, DictPart } from "./types.ts";
 
 const DATA = new URL("../../data/site/", import.meta.url);
@@ -193,13 +193,13 @@ test("krdict: one entry per source entry, in order, with every sense, definition
       );
       const en = (s: any) => list<any>(s.Equivalent).map((q) => feats(q.feat)).filter((q) => q.language?.[0] === "영어");
       assert.deepEqual(
-        e.senses.map((s) => s.glosses?.map((g) => g.text) ?? []),
+        e.senses.map((s) => s.glosses?.filter((g) => g.lang === "en").map((g) => g.text) ?? []),
         senses.map((s) => en(s).map((q) => q.definition[0].trim())),
         `${w} ${i}: English definitions`,
       );
       // "eat; have; consume" is split into one translation per word, nothing else changes
       assert.deepEqual(
-        e.senses.map((s) => (s.translations ?? []).map((x) => x.word).join("; ")),
+        e.senses.map((s) => (s.translations ?? []).filter((x) => x.lang === "en").map((x) => x.word).join("; ")),
         senses.map((s) => en(s).map((q) => q.lemma[0].split(/\s*;\s*/).filter(Boolean).join("; ")).join("; ")),
         `${w} ${i}: English equivalents`,
       );
@@ -331,10 +331,35 @@ test("every registered dictionary has data, and every data directory is register
   assert.deepEqual(Object.keys(SHARDS).sort(), [...ALL_DICTS].sort());
 });
 
-test("sentence pairs are stored per headword with the headword's side first", { skip: !haveData }, () => {
-  const love = part("tatoeba", "love")?.pairs ?? [];
-  assert.ok(love.length > 0);
-  for (const p of love) assert.equal(p.lang, "en");
-  const sarang = part("tatoeba", "사랑")?.pairs ?? [];
-  for (const p of sarang) assert.equal(p.lang, "ko");
+test("sentences: stored once with their translations, listed under the words they contain", { skip: !haveData }, () => {
+  const store = (sid: number) => {
+    const m = JSON.parse(fs.readFileSync(new URL("i/manifest.json", DATA), "utf8"));
+    const n = m.stores.tatoeba;
+    return JSON.parse(fs.readFileSync(new URL(`d/tatoeba/s/${sentenceShard(sid, n)}.json`, DATA), "utf8"))[sid];
+  };
+  for (const [word, lang] of [["love", "en"], ["사랑", "ko"], ["食べる", "ja"]] as const) {
+    const ids = part("tatoeba", word)?.sentences ?? [];
+    assert.ok(ids.length > 0, word);
+    for (const sid of ids.slice(0, 5)) {
+      const s = store(sid);
+      assert.equal(s.lang, lang, `${word} ${sid}`);
+      assert.ok(s.translations.length > 0 && s.translations.every((t: { lang: string }) => t.lang !== lang), `${word} ${sid}`);
+    }
+  }
+});
+
+test("krdict: Japanese equivalents are kept as written and link their reading and kanji spellings", { skip: !haveKrdict }, () => {
+  const tr = part("krdict", "사과")!.entries![0].senses[0].translations!.filter((t) => t.lang === "ja").map((t) => t.word);
+  assert.ok(tr.length > 0 && tr.every((w) => !w.includes("。")), tr.join(" | "));
+  // りんご【林檎】 -> backlinks on りんご and 林檎
+  for (const w of tr.flatMap((x) => /^([^【]*)【([^】]*)】/.exec(x)?.slice(1).flatMap((y) => y.split("・")) ?? [x]))
+    assert.ok(part("krdict", w)?.backlinks?.some((b) => b.word === "사과"), w);
+});
+
+test("JMdict: one entry per spelling, with the senses that apply to it and the other spellings", { skip: !haveData }, () => {
+  const kanji = entries("jmdict", "食べる")!;
+  const kana = entries("jmdict", "たべる")!;
+  assert.ok(kanji[0].senses.some((s) => s.gloss === "to eat"));
+  assert.deepEqual(kanji[0].pron?.map((p) => p.text), ["たべる"]);
+  assert.ok(kanji[0].alt?.includes("たべる") && kana[0].alt?.includes("食べる"));
 });

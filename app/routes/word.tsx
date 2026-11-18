@@ -4,18 +4,20 @@ import { TRLink } from "@tinyrack/ui/components/link";
 import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRSkeleton } from "@tinyrack/ui/components/skeleton";
 import { TRText } from "@tinyrack/ui/components/text";
-import { useEffect } from "react";
+import { TRBadge } from "@tinyrack/ui/components/badge";
+import { TRButton } from "@tinyrack/ui/components/button";
+import { useEffect, useState } from "react";
 import { Link, type ShouldRevalidateFunctionArgs, useLocation, useNavigation } from "react-router";
 import type { Route } from "./+types/word";
 import { Collapsed, DictEntries } from "~/components/DictEntryView";
 import { useDelayed } from "~/components/NavigationProgress";
 import { SaveButton } from "~/components/SaveButton";
-import { getEntry, search, setLoadingUrl } from "~/lib/data";
+import { getEntry, getSentences, search, setLoadingUrl } from "~/lib/data";
 import { addRecent } from "~/lib/history";
 import { posLabel, stringsFor, useT } from "~/lib/i18n";
-import { type Dictionary, type DictId, headwordLang, LICENSE_URL, localized, maskHas } from "~/lib/dicts";
+import { type Dictionary, type DictId, headwordLang, langPair, LICENSE_URL, localized, maskHas } from "~/lib/dicts";
 import { DICTIONARIES, parseDicts, useHydrated, useSettings } from "~/lib/settings";
-import type { Backlink, Entry, SentencePair } from "~/lib/types";
+import type { Backlink, Entry, Sentence } from "~/lib/types";
 
 // /{lang}/word?word=<headword>&dicts=<dictionary ids>&theme=<theme>
 // One prerendered shell per UI language; the entry is loaded in the browser, fetching only the
@@ -102,7 +104,7 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
   // one card per selected dictionary that has something for the word, in the URL's order
   const cards = settings.dicts
     .map((id) => ({ d: DICTIONARIES.find((x) => x.id === id)!, part: entry.parts[id] }))
-    .filter(({ part }) => part?.entries?.length || part?.backlinks?.length || part?.pairs?.length);
+    .filter(({ part }) => part?.entries?.length || part?.backlinks?.length || part?.sentences?.length);
   const available = DICTIONARIES.filter((d) => maskHas(mask, d.id));
   const lang = headwordLang(entry.parts);
   const heading = headingFor(entry, word);
@@ -119,7 +121,7 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
       {cards.length === 0 && (
         <TRAlert.Root variant="info">
           <TRAlert.Description>
-            {settings.dicts.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => localized(d.name, settings.lang)).join(", "))}
+            {settings.dicts.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => `${langPair(d, t)} ${localized(d.name, settings.lang)}`).join(", "))}
           </TRAlert.Description>
         </TRAlert.Root>
       )}
@@ -128,20 +130,25 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
         <SourceCard key={d.id} d={d}>
           {part.entries?.length ? <DictEntries entries={part.entries} heading={heading} /> : null}
           {part.backlinks?.length ? <Backlinks items={part.backlinks} /> : null}
-          {part.pairs?.length ? <Pairs pairs={part.pairs} /> : null}
+          {part.sentences?.length ? <Sentences dict={d.id} ids={part.sentences} /> : null}
         </SourceCard>
       ))}
     </article>
   );
 }
 
-/** One dictionary's card: its name, and its source and license, both linked (attribution). */
+/**
+ * One dictionary's card: its language pair and name ("English–Korean · Wiktionary"), and its source
+ * and license, both linked (attribution).
+ */
 function SourceCard({ d, children }: { d: Dictionary; children: React.ReactNode }) {
   const settings = useSettings();
+  const t = useT();
   return (
     <TRCard.Root variant="outlined" padding="lg" render={<section aria-labelledby={`src-${d.id}`} />}>
       <TRCard.Header className="flex flex-wrap items-baseline justify-between gap-tinyrack-sm">
-        <TRCard.Title id={`src-${d.id}`} render={<TRText as="h2" variant="headingSm" />}>
+        <TRCard.Title id={`src-${d.id}`} render={<TRText as="h2" variant="headingSm" className="flex flex-wrap items-baseline gap-x-tinyrack-sm" />}>
+          <TRBadge className="self-center">{langPair(d, t)}</TRBadge>
           {localized(d.name, settings.lang)}
         </TRCard.Title>
         <TRText variant="caption" color="muted">
@@ -193,22 +200,42 @@ function Backlinks({ items }: { items: Backlink[] }) {
   );
 }
 
-/** Sentence pairs that contain the headword exactly: the sentence, then its translation. */
-function Pairs({ pairs }: { pairs: SentencePair[] }) {
+/** How many sentences are fetched and shown at a time. */
+const SENTENCE_PAGE = 5;
+
+/**
+ * Sentences that contain the headword exactly, each with its translations. The part lists sentence
+ * ids; their text is fetched a page at a time from the dictionary's sentence store.
+ */
+function Sentences({ dict, ids }: { dict: string; ids: number[] }) {
+  const t = useT();
+  const [count, setCount] = useState(SENTENCE_PAGE);
+  const [shown, setShown] = useState<Sentence[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getSentences(dict, ids.slice(0, count)).then((s) => live && setShown(s));
+    return () => {
+      live = false;
+    };
+  }, [dict, ids, count]);
+  if (!shown) return <TRSkeleton className="w-tinyrack-overlay-width-sm max-w-full" />;
   return (
     <TRText as="span" className="flex flex-col gap-tinyrack-sm">
-      <Collapsed items={pairs} limit={5}>
-        {(shown) =>
-          shown.map((p, i) => (
-            <TRText as="span" key={i} className="flex flex-col">
-              <TRText lang={p.lang}>{p.text}</TRText>
-              <TRText variant="bodySm" color="muted" lang={p.translation.lang}>
-                {p.translation.text}
-              </TRText>
+      {shown.map((s, i) => (
+        <TRText as="span" key={i} className="flex flex-col">
+          <TRText lang={s.lang}>{s.text}</TRText>
+          {s.translations.map((tr, j) => (
+            <TRText key={j} variant="bodySm" color="muted" lang={tr.lang}>
+              {tr.text}
             </TRText>
-          ))
-        }
-      </Collapsed>
+          ))}
+        </TRText>
+      ))}
+      {count < ids.length && (
+        <TRButton appearance="ghost" uiSize="sm" className="self-start" onClick={() => setCount((c) => c + SENTENCE_PAGE * 4)}>
+          {t.showMore(ids.length - count)}
+        </TRButton>
+      )}
     </TRText>
   );
 }

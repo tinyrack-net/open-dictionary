@@ -4,7 +4,7 @@
 // examples, the synset's other members (synonyms) and its hypernyms' members, all in source order.
 import fs from "node:fs";
 import type { Example, Pron, Relations, Sense } from "../../app/lib/types.ts";
-import { addEntry, compact, download, exists, headword, raw, unzip } from "../lib/core.ts";
+import { addEntry, compact, download, exists, headword, raw, extract } from "../lib/core.ts";
 import type { Source } from "../lib/source.ts";
 
 const ID = "wordnet";
@@ -16,7 +16,7 @@ export default {
   dictionaries: [ID],
   fetch() {
     download("oewn.zip", "https://github.com/globalwordnet/english-wordnet/releases/download/2025-edition/english-wordnet-2025-json.zip");
-    unzip("oewn.zip", "oewn");
+    extract("oewn.zip", "oewn");
   },
   build() {
     if (!exists("oewn")) return "skipped (raw/oewn missing)";
@@ -28,7 +28,7 @@ export default {
       const data = JSON.parse(fs.readFileSync(`${dir}/${f}`, "utf8"));
       for (const [lemma, byPos] of Object.entries<any>(data)) {
         const h = headword(lemma);
-        if (!h.parts[ID] && /^[a-z]/.test(lemma)) h.w = lemma; // display the lowercase spelling when there is one
+        if (!h.dicts.has(ID) && /^[a-z]/.test(lemma)) h.w = lemma; // display the lowercase spelling when there is one
         for (const [posKey, info] of Object.entries<any>(byPos)) {
           const senses: Sense[] = [];
           for (const s of info.sense ?? []) {

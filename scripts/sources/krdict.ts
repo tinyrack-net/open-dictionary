@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import type { DictEntry, Example, Form, GlossText, Pron, Relations, RelationKind, Sense, Translation, WordRef } from "../../app/lib/types.ts";
-import { addBacklink, addEntry, compact, download, exists, list, raw, unzip } from "../lib/core.ts";
+import { addBacklink, addEntry, compact, download, exists, list, raw, extract } from "../lib/core.ts";
 import type { Source } from "../lib/source.ts";
 
 /**
@@ -15,12 +15,13 @@ import type { Source } from "../lib/source.ts";
  *           WordForm 발음 -> pron (text only, see krEntry); WordForm 활용 -> forms ("활용");
  *           RelatedForm -> relations.derived (파생어) / related (☞ cross-references);
  *           annotation -> notes
- *   sense:  definition -> gloss; English definition -> glosses; English equivalent -> translations
+ *   sense:  definition -> gloss; equivalents' definitions -> glosses; equivalents -> translations
  *           (the source joins several with "; ": one translation each); syntacticPattern, annotation,
  *           syntacticAnnotation -> notes; SenseExample -> examples (each turn of a dialogue on its own
  *           line); SenseRelation -> relations by type (유의어, 반대말, 참고어, 준말 …, tagged as such)
  *
- * Every English equivalent also gives the English word a backlink, like Wiktionary's translations.
+ * Equivalents are read for the languages in EQUIVALENTS (English, Japanese). Every equivalent also gives
+ * the translated word a backlink, like Wiktionary's translations.
  *
  * License: the text is CC BY-SA 2.0 KR. Its share-alike clause applies to this converted data, which
  * is redistributed under the same license (d/krdict/), credited to 국립국어원 with a link to the license.
@@ -49,9 +50,40 @@ const one = (f: Feats, k: string) => f[k]?.[0]?.trim() || undefined;
 /** The source's relation types: synonyms and antonyms by kind, every other type as a tagged related word. */
 const KR_RELATION: Record<string, RelationKind> = { 유의어: "synonyms", 반대말: "antonyms" };
 
+/**
+ * Equivalent languages used, by the source's language name -> code. The export has 11 languages per
+ * sense; these are the ones the site has dictionaries in. Add one here to use another.
+ */
+const EQUIVALENTS: Record<string, string> = { 영어: "en", 일본어: "ja" };
+
+/**
+ * How each language writes several equivalents in one field, and which words in an equivalent a
+ * backlink goes to:
+ *   English  "eat; have; consume"                       -> eat | have | consume
+ *   Japanese "せんえいだ【先鋭だ・尖鋭だ】。するどい【鋭い】" -> one equivalent per "。", each kept as
+ *            written; it links the kana reading and every kanji spelling (せんえいだ, 先鋭だ, 尖鋭だ).
+ *            "(対訳語無し)" means the source has no equivalent.
+ */
+const SPLIT: Record<string, (v: string) => string[]> = {
+  en: (v) => v.split(/\s*;\s*/),
+  ja: (v) => v.split("。").filter((x) => !/^\(対訳語無し\)$/.test(x.trim())),
+};
+const LINKED: Record<string, (word: string) => string[]> = {
+  en: (w) => [w],
+  ja: (w) => {
+    const m = /^([^【]*)【([^】]*)】/.exec(w);
+    return m ? [m[1], ...m[2].split("・")].map((x) => x.trim()).filter(Boolean) : [w];
+  },
+};
+/** Words an equivalent links to (backlinks): see LINKED. */
+export const linkedWords = (t: Translation) => (LINKED[t.lang] ?? LINKED.en)(t.word);
+
 function krSense(s: any): Sense {
   const f = feats(s.feat);
-  const en = list<any>(s.Equivalent).map((q) => feats(q.feat)).filter((q) => one(q, "language") === "영어");
+  const eq = list<any>(s.Equivalent)
+    .map((q) => feats(q.feat))
+    .filter((q) => EQUIVALENTS[one(q, "language") ?? ""])
+    .map((q) => ({ lang: EQUIVALENTS[one(q, "language")!], lemma: one(q, "lemma"), definition: one(q, "definition") }));
   const relations: Relations = {};
   for (const r of list<any>(s.SenseRelation)) {
     const rf = feats(r.feat);
@@ -63,10 +95,15 @@ function krSense(s: any): Sense {
   }
   return compact({
     gloss: one(f, "definition") ?? "",
-    glosses: en.flatMap((q): GlossText[] => (one(q, "definition") ? [{ lang: "en", text: one(q, "definition")! }] : [])),
+    glosses: eq.flatMap((q): GlossText[] => (q.definition ? [{ lang: q.lang, text: q.definition }] : [])),
     notes: [...(f.syntacticPattern ?? []), ...(f.annotation ?? []), ...(f.syntacticAnnotation ?? [])].map((x) => x.trim()).filter(Boolean),
-    // the source lists several equivalents in one field, "eat; have; consume": one translation each, in order
-    translations: en.flatMap((q) => (one(q, "lemma") ?? "").split(/\s*;\s*/).filter(Boolean).map((word): Translation => ({ word, lang: "en" }))),
+    // several equivalents in one field: one translation each, in order, as written (see SPLIT)
+    translations: eq.flatMap((q) =>
+      (SPLIT[q.lang] ?? SPLIT.en)(q.lemma ?? "")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map((word): Translation => ({ word, lang: q.lang })),
+    ),
     examples: list<any>(s.SenseExample).flatMap((x): Example[] => {
       const xf = feats(x.feat);
       const text = (xf.example ?? []).map((t) => t.trim()).filter(Boolean);
@@ -128,7 +165,7 @@ export default {
       if (!json) throw new Error("krdict: JSON download id not found on the download page");
       download("krdict.zip", `https://krdict.korean.go.kr/dicBatchDownload?seq=${json}`, { userAgent: "Mozilla/5.0" });
     }
-    unzip("krdict.zip", "krdict");
+    extract("krdict.zip", "krdict");
   },
   build() {
     if (!exists("krdict")) return "skipped (raw/krdict missing)";
@@ -144,9 +181,10 @@ export default {
         addEntry(ID, entry);
         count++;
         for (const s of entry.senses)
-          for (const t of s.translations ?? []) if (addBacklink(ID, t.word, { word: entry.word, lang: "ko", pos: entry.pos, sense: s.gloss })) backlinks++;
+          for (const t of s.translations ?? [])
+            for (const w of linkedWords(t)) if (addBacklink(ID, w, { word: entry.word, lang: "ko", pos: entry.pos, sense: s.gloss })) backlinks++;
       }
     }
-    return `${count} entries from ${files.length} files, ${backlinks} english backlinks`;
+    return `${count} entries from ${files.length} files, ${backlinks} backlinks on equivalents`;
   },
 } satisfies Source;

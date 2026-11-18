@@ -23,11 +23,13 @@
 - Prerendered HTML can't see the query string: URL-dependent UI must render defaults until `useHydrated()`.
 
 ## Dictionaries are data
-- `app/lib/dicts.ts` (`DICTIONARIES`) is the only place that names dictionaries: ids, languages, names,
-  descriptions, sources, licenses. App code, the build and the service worker iterate it; never add an `if`
+- `app/lib/dicts.ts` (`DICTIONARIES`) is the only place that names dictionaries: ids, languages (shown as the
+  language pair on every card and in settings), names, descriptions, sources, licenses. App code, the build and the service worker iterate it; never add an `if`
   on a dictionary id, language or tag value anywhere else.
 - A dictionary's data comes from a source module in `scripts/sources/` (contract: `scripts/lib/source.ts`), listed
   in `scripts/sources/index.ts`. Shared converters live in `scripts/lib/` (e.g. `wiktextract.ts`).
+- The data build keeps dictionary content out of memory: sources append to spool files (`scripts/lib/core.ts`),
+  and the writer assembles one dictionary at a time. Keep it that way; CI runners have ~16 GB.
 - Never synthesize content. Converters copy each source into the neutral format of `app/lib/types.ts`
   (`DictPart`: entries, backlinks, sentence pairs): same entries, order, glosses, examples and tags; no merging
   across entries or sources, no summaries, ratings, rankings, guessed links, truncation or caps.

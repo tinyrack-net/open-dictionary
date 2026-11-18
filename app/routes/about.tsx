@@ -3,7 +3,7 @@ import { TRCard } from "@tinyrack/ui/components/card";
 import { TRLink } from "@tinyrack/ui/components/link";
 import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/about";
-import { DICTIONARIES, EXTRA_SOURCES, LICENSE_URL, localized } from "~/lib/dicts";
+import { DICTIONARIES, EXTRA_SOURCES, langPair, LICENSE_URL, localized } from "~/lib/dicts";
 import { stringsFor, useLang, useT } from "~/lib/i18n";
 import { alternates } from "~/lib/seo";
 
@@ -16,8 +16,8 @@ export default function About() {
   const t = useT();
   const lang = useLang();
   const sources = [
-    ...DICTIONARIES.map((d) => ({ name: localized(d.name, lang), source: d.source.name, url: d.source.url, license: d.license, licenseUrl: undefined, use: localized(d.description, lang) })),
-    ...EXTRA_SOURCES.map((x) => ({ name: x.name, source: undefined, url: x.url, license: x.license, licenseUrl: x.licenseUrl, use: localized(x.description, lang) })),
+    ...DICTIONARIES.map((d) => ({ pair: langPair(d, t), name: localized(d.name, lang), source: d.source.name, url: d.source.url, license: d.license, licenseUrl: undefined, use: localized(d.description, lang) })),
+    ...EXTRA_SOURCES.map((x) => ({ pair: undefined, name: x.name, source: undefined, url: x.url, license: x.license, licenseUrl: x.licenseUrl, use: localized(x.description, lang) })),
   ];
   return (
     <article className="flex flex-col gap-tinyrack-lg py-tinyrack-2xl">
@@ -27,9 +27,10 @@ export default function About() {
       <TRText as="p" color="muted" className="reading-measure">
         {t.aboutIntro}
       </TRText>
-      {sources.map((s) => (
-        <TRCard.Root key={s.name} variant="outlined">
+      {sources.map((s, i) => (
+        <TRCard.Root key={i} variant="outlined">
           <TRCard.Header className="flex flex-wrap items-center gap-tinyrack-sm">
+            {s.pair && <TRBadge>{s.pair}</TRBadge>}
             <TRCard.Title render={<TRText as="h2" variant="headingSm" />}>
               <TRLink href={s.url}>{s.name}</TRLink>
             </TRCard.Title>

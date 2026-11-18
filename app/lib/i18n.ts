@@ -4,12 +4,13 @@
 // tags and parts of speech 1:1 to its own labels, and anything missing is shown as the source wrote it.
 import { useParams } from "react-router";
 import en, { type Strings } from "../locales/en.ts";
+import ja from "../locales/ja.ts";
 import ko from "../locales/ko.ts";
 import { DEFAULT_LANG, isLang, type Lang } from "./dicts.ts";
 
 export type { Strings };
 
-export const STRINGS: Record<Lang, Strings> = { en, ko };
+export const STRINGS: Record<Lang, Strings> = { en, ko, ja };
 
 /** Strings for a route's `lang` param (meta functions, error boundaries). */
 export const stringsFor = (lang: string | undefined): Strings => STRINGS[isLang(lang) ? lang : DEFAULT_LANG];

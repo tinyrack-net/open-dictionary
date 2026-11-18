@@ -1,59 +1,110 @@
-// Tatoeba (CC BY 2.0 FR): English–Korean sentence pairs -> "tatoeba".
+// Tatoeba (CC BY 2.0 FR): sentences in the site's languages with their translations -> "tatoeba".
 //
-// A pair is attached to a headword only when the headword occurs in it as an exact whole word:
-// English by token (and two-token phrases like "give up"), Korean by whitespace-separated word, and
-// only to headwords some dictionary already has. No stemming or other guessing, so 먹다 gets no pairs
-// (Korean sentences contain 먹어, 먹었다…).
+// Every sentence of LANGS that has a translation in another of LANGS is stored once, with all those
+// translations (sentence store, see output.ts). It is listed under each headword it contains as an
+// exact word, and only under headwords some dictionary already has. How a sentence is split into
+// words is per language (WORDS): no stemming or other guessing, so 먹다 gets no Korean sentences
+// (they contain 먹어, 먹었다…), while Japanese uses Tatoeba's own word index, which gives each word's
+// dictionary form (食べて -> 食べる).
+//
+// To add a language: its Tatoeba code in LANGS and a word splitter in WORDS.
 import fs from "node:fs";
-import type { SentencePair } from "../../app/lib/types.ts";
-import { addPair, bunzip, download, exists, raw } from "../lib/core.ts";
+import { entryKey } from "../../app/lib/keys.ts";
+import type { Sentence } from "../../app/lib/types.ts";
+import { addSentence, addSentenceRef, bunzip, download, exists, extract, lines, raw } from "../lib/core.ts";
 import type { Source } from "../lib/source.ts";
 
 const ID = "tatoeba";
-const FILES = [
-  ["tatoeba/eng-kor_links.tsv.bz2", "https://downloads.tatoeba.org/exports/per_language/eng/eng-kor_links.tsv.bz2"],
-  ["tatoeba/kor_sentences.tsv.bz2", "https://downloads.tatoeba.org/exports/per_language/kor/kor_sentences.tsv.bz2"],
-  ["tatoeba/eng_sentences.tsv.bz2", "https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2"],
-];
+
+/** Site language code -> Tatoeba (ISO 639-3) code. */
+const LANGS: Record<string, string> = { en: "eng", ko: "kor", ja: "jpn" };
+
+/** Headword keys a sentence contains, per language. `index` has Japanese's dictionary forms by sentence id. */
+const WORDS: Record<string, (text: string, sid: string, index: Map<string, string[]>) => Iterable<string>> = {
+  // tokens and two-token phrases ("give up")
+  en: (text) => {
+    const tokens = text.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) ?? [];
+    return [...tokens, ...tokens.slice(1).map((t, i) => `${tokens[i]} ${t}`)];
+  },
+  // whitespace-separated words
+  ko: (text) => text.split(/[\s.,!?"'()…·:;]+/).filter(Boolean),
+  // Tatoeba's Japanese index: "直ぐに{すぐに} 戻る{戻ります}" -> 直ぐに, 戻る (+ the written forms)
+  ja: (_text, sid, index) => index.get(sid) ?? [],
+};
+
+const pairs = () => Object.values(LANGS).flatMap((a) => Object.values(LANGS).filter((b) => b !== a).map((b) => [a, b]));
 
 export default {
   name: "Tatoeba",
   dictionaries: [ID],
   fetch() {
-    for (const [out, url] of FILES) {
-      download(out, url);
-      bunzip(out);
+    for (const code of Object.values(LANGS)) {
+      download(`tatoeba/${code}_sentences.tsv.bz2`, `https://downloads.tatoeba.org/exports/per_language/${code}/${code}_sentences.tsv.bz2`);
+      bunzip(`tatoeba/${code}_sentences.tsv.bz2`);
     }
+    for (const [a, b] of pairs()) {
+      download(`tatoeba/${a}-${b}_links.tsv.bz2`, `https://downloads.tatoeba.org/exports/per_language/${a}/${a}-${b}_links.tsv.bz2`);
+      bunzip(`tatoeba/${a}-${b}_links.tsv.bz2`);
+    }
+    download("tatoeba/jpn_indices.tar.bz2", "https://downloads.tatoeba.org/exports/jpn_indices.tar.bz2");
+    extract("tatoeba/jpn_indices.tar.bz2", "tatoeba/jpn_indices");
   },
   build: () => "attached after the dictionaries",
-  after() {
-    if (!exists("tatoeba", "eng-kor_links.tsv")) return "skipped (raw/tatoeba missing)";
-    const read = (f: string) => fs.readFileSync(raw("tatoeba", f), "utf8").split("\n").filter(Boolean);
-    const kor = new Map(read("kor_sentences.tsv").map((l) => l.split("\t")).map(([id, , t]) => [id, t]));
-    const links = read("eng-kor_links.tsv").map((l) => l.split("\t"));
-    const engIds = new Set(links.map((l) => l[0]));
-    const eng = new Map<string, string>();
-    for (const l of read("eng_sentences.tsv")) {
-      const id = l.slice(0, l.indexOf("\t"));
-      if (engIds.has(id)) eng.set(id, l.split("\t")[2]);
-    }
-    let pairs = 0;
-    let attached = 0;
-    for (const [e, k] of links) {
-      const en = eng.get(e);
-      const ko = kor.get(k);
-      if (!en || !ko) continue;
-      pairs++;
-      // one object per side, shared by every headword of that side
-      const fromEn: SentencePair = { lang: "en", text: en, translation: { lang: "ko", text: ko } };
-      const fromKo: SentencePair = { lang: "ko", text: ko, translation: { lang: "en", text: en } };
-      const tokens = en.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) ?? [];
-      for (let i = 0; i < tokens.length; i++) {
-        if (addPair(ID, tokens[i], fromEn)) attached++;
-        if (tokens[i + 1] && addPair(ID, `${tokens[i]} ${tokens[i + 1]}`, fromEn)) attached++;
+  async after() {
+    if (!exists("tatoeba")) return "skipped (raw/tatoeba missing)";
+    // sentences of every language, then each one's translations into the others
+    const text = new Map<string, { lang: string; text: string }>();
+    for (const [lang, code] of Object.entries(LANGS)) {
+      const file = raw("tatoeba", `${code}_sentences.tsv`);
+      if (!fs.existsSync(file)) continue;
+      for await (const line of lines(file)) {
+        const [sid, , t] = line.split("\t");
+        if (t) text.set(sid, { lang, text: t });
       }
-      for (const word of ko.split(/[\s.,!?"'()…·:;]+/).filter(Boolean)) if (addPair(ID, word, fromKo)) attached++;
     }
-    return `${pairs} sentence pairs, ${attached} exact word matches`;
+    const translations = new Map<string, string[]>();
+    for (const [a, b] of pairs()) {
+      const file = raw("tatoeba", `${a}-${b}_links.tsv`);
+      if (!fs.existsSync(file)) continue;
+      for await (const line of lines(file)) {
+        const [from, to] = line.split("\t");
+        if (!text.has(from) || !text.has(to)) continue;
+        const list = translations.get(from) ?? [];
+        if (!list.includes(to)) translations.set(from, [...list, to]);
+      }
+    }
+    // Japanese word index: sentence id -> dictionary forms (and written forms) of its words
+    const index = new Map<string, string[]>();
+    const indexFile = raw("tatoeba", "jpn_indices", "jpn_indices.csv");
+    if (fs.existsSync(indexFile))
+      for await (const line of lines(indexFile)) {
+        const [sid, , words] = line.split("\t");
+        const forms = new Set<string>();
+        for (const tok of words?.split(" ") ?? []) {
+          const head = /^[^([{~|]+/.exec(tok)?.[0];
+          const written = /\{([^}]+)\}/.exec(tok)?.[1];
+          if (head) forms.add(head);
+          if (written) forms.add(written);
+        }
+        index.set(sid, [...forms]);
+      }
+
+    let stored = 0;
+    let refs = 0;
+    for (const [sid, list] of translations) {
+      const s = text.get(sid)!;
+      const sentence: Sentence = { lang: s.lang, text: s.text, translations: list.map((t) => text.get(t)!) };
+      let listed = false;
+      for (const word of new Set(WORDS[s.lang]?.(s.text, sid, index) ?? []))
+        if (addSentenceRef(ID, entryKey(word), Number(sid))) {
+          listed = true;
+          refs++;
+        }
+      if (listed) {
+        addSentence(ID, Number(sid), sentence);
+        stored++;
+      }
+    }
+    return `${stored} sentences with translations, listed under ${refs} exact word matches`;
   },
 } satisfies Source;

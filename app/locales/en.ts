@@ -30,7 +30,21 @@ const en = {
   } as Record<RelationKind, string>,
   backlinksTitle: "Given as a translation of",
   /** language names (BCP 47 code -> name), e.g. for a definition written in another language */
-  languages: { en: "English", ko: "Korean" } as Record<string, string>,
+  languages: { en: "English", ko: "Korean", ja: "Japanese" } as Record<string, string>,
+  /** short language names for language pairs ("en" -> "English"; Korean uses 영, 한, 일) */
+  langShort: { en: "English", ko: "Korean", ja: "Japanese" } as Record<string, string>,
+  /** a dictionary's language pair: headwords in `head`, definitions in `gloss` */
+  langPair: (head: string, gloss: string, short: Record<string, string>) => `${short[head] ?? head}–${short[gloss] ?? gloss}`,
+  /** label of a sentence corpus in place of a language pair */
+  sentencesLabel: "Sentences",
+  /** settings: the dictionary list */
+  dictionaryOrder: "Dictionaries and order",
+  dictionaryOrderHint: "Shown on word pages in this order. Turn dictionaries on or off and move them up or down.",
+  moveUp: (name: string) => `Move ${name} up`,
+  moveDown: (name: string) => `Move ${name} down`,
+  resetOrder: "Reset to default",
+  done: "Done",
+  appearance: "Appearance",
   pairsTitle: "Example sentences",
   notFound: "No entry found.",
   offline: "You're offline. Words you've opened before still work; this one needs a connection.",
@@ -38,6 +52,7 @@ const en = {
   onlyIn: (names: string) => `This word is only in: ${names}. Turn it on in Settings.`,
   noneSelected: "No dictionary selected. Choose at least one in Settings.",
   showAll: (n: number) => `Show all ${n}`,
+  showMore: (rest: number) => `Show more (${rest} left)`,
   play: (label: string) => `Play pronunciation (${label})`,
   playGeneric: "Play pronunciation",
   save: "Save word",

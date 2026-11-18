@@ -1,63 +1,137 @@
 // Shared by every source module (scripts/sources/*.ts): where raw data lives, how headwords are
 // collected, and small helpers for the neutral format (app/lib/types.ts).
+//
+// Memory: the full data is several GB as objects, so dictionary content is not kept in memory. Each
+// add* call appends one small JSON line to a spool file per dictionary (data/spool/<id>.jsonl); the
+// writer (output.ts) reads them back one dictionary at a time. In memory there is only one light
+// record per headword: its display spelling, frequency and which dictionaries have it.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import zlib from "node:zlib";
 import { entryKey } from "../../app/lib/keys.ts";
-import type { Backlink, DictEntry, DictPart, SentencePair } from "../../app/lib/types.ts";
+import type { Backlink, DictEntry, Sentence } from "../../app/lib/types.ts";
 
 export const ROOT = path.resolve(import.meta.dirname, "..", "..");
 export const RAW = path.join(ROOT, "raw");
+export const SPOOL = path.join(ROOT, "data", "spool");
 /** Lines per JSONL file to read (development: LIMIT=50000 pnpm build-data). */
 export const LIMIT = Number(process.env.LIMIT ?? Infinity);
 
 // ---------------------------------------------------------------- collected headwords
 
-/** One headword: its display spelling, optional frequency, and what each dictionary has for it. */
+/** One headword: display spelling, optional frequency, and the dictionaries that have something for it. */
 export interface Headword {
   w: string;
   /** Zipf frequency, search ranking only */
   freq?: number;
-  parts: Record<string, DictPart>;
+  dicts: Set<string>;
 }
 
-/** Every headword of every source, by entryKey. Sources add to it; the build writes it out. */
+/** Every headword of every source, by entryKey. */
 export const headwords = new Map<string, Headword>();
 
 /** The headword for a spelling, created on first use. The first spelling seen is displayed. */
 export function headword(display: string): Headword {
   const key = entryKey(display);
   let h = headwords.get(key);
-  if (!h) headwords.set(key, (h = { w: display, parts: {} }));
+  if (!h) headwords.set(key, (h = { w: display, dicts: new Set() }));
   return h;
 }
 
-/** What dictionary `id` has for a headword, created on first use. */
-export function partOf(display: string, id: string): DictPart {
-  return (headword(display).parts[id] ??= {});
+// ---------------------------------------------------------------- spooled content
+
+type Fragment = ["e", DictEntry] | ["b", Backlink] | ["s", number];
+const spools = new Map<string, { fd: number; buf: string[]; size: number }>();
+
+function spool(id: string, key: string, fragment: Fragment) {
+  write(id, JSON.stringify([key, ...fragment]));
 }
+
+/** Appends a line to spool file `name` (buffered). */
+function write(id: string, line: string) {
+  let s = spools.get(id);
+  if (!s) {
+    fs.mkdirSync(SPOOL, { recursive: true });
+    spools.set(id, (s = { fd: fs.openSync(path.join(SPOOL, `${id}.jsonl`), "w"), buf: [], size: 0 }));
+  }
+  s.buf.push(line);
+  s.size += line.length;
+  if (s.size > 4_000_000) flushSpool(id);
+}
+
+function flushSpool(id: string) {
+  const s = spools.get(id)!;
+  if (s.buf.length) fs.writeSync(s.fd, s.buf.join("\n") + "\n");
+  s.buf = [];
+  s.size = 0;
+}
+
+/** Closes every spool file; the writer reads them afterwards. */
+export function closeSpools() {
+  for (const [id, s] of spools) {
+    flushSpool(id);
+    fs.closeSync(s.fd);
+  }
+  spools.clear();
+}
+
+/** Fragments of one dictionary, in the order they were added: [entryKey, kind, value]. */
+export async function* readSpool(id: string): AsyncGenerator<[string, ...Fragment]> {
+  yield* readSpoolFile(id);
+}
+
+/** Sentences of a dictionary's sentence store: [sentence id, sentence]. */
+export async function* readStore(id: string): AsyncGenerator<[number, Sentence]> {
+  yield* readSpoolFile(`${id}.store`) as AsyncGenerator<any>;
+}
+
+async function* readSpoolFile(name: string): AsyncGenerator<any> {
+  const file = path.join(SPOOL, `${name}.jsonl`);
+  if (!fs.existsSync(file)) return;
+  const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+  for await (const line of rl) if (line) yield JSON.parse(line);
+}
+
+/** Spool file size, for sizing chunk counts (0 when the dictionary has no such data). */
+export const spoolSize = (name: string) => {
+  const file = path.join(SPOOL, `${name}.jsonl`);
+  return fs.existsSync(file) ? fs.statSync(file).size : 0;
+};
 
 export function addEntry(id: string, entry: DictEntry) {
-  (partOf(entry.word, id).entries ??= []).push(entry);
+  const h = headword(entry.word);
+  h.dicts.add(id);
+  spool(id, entryKey(entry.word), ["e", entry]);
 }
 
-/** Adds a backlink unless the same one (word, part of speech, sense) is already there. */
+/**
+ * Adds a backlink: "this word is given as a translation of `link.word`". The same backlink (word,
+ * part of speech, sense) is stored once.
+ */
+const seenBacklinks = new Set<string>();
 export function addBacklink(id: string, target: string, link: Backlink): boolean {
-  const list = (partOf(target, id).backlinks ??= []);
-  if (list.some((b) => b.word === link.word && b.pos === link.pos && b.sense === link.sense)) return false;
-  list.push(link);
+  const key = entryKey(target);
+  const seen = `${id}\u0000${key}\u0000${link.word}\u0000${link.pos}\u0000${link.sense}`;
+  if (seenBacklinks.has(seen)) return false;
+  seenBacklinks.add(seen);
+  headword(target).dicts.add(id);
+  spool(id, key, ["b", link]);
   return true;
 }
 
-/** Adds a sentence pair to an existing headword (pairs never create headwords). */
-export function addPair(id: string, key: string, pair: SentencePair): boolean {
+/** Stores a sentence (with its translations) once in a dictionary's sentence store. */
+export function addSentence(id: string, sid: number, sentence: Sentence) {
+  write(`${id}.store`, JSON.stringify([sid, sentence]));
+}
+
+/** Lists a stored sentence under an existing headword (sentences never create headwords). */
+export function addSentenceRef(id: string, key: string, sid: number): boolean {
   const h = headwords.get(key);
   if (!h) return false;
-  const list = ((h.parts[id] ??= {}).pairs ??= []);
-  if (list.includes(pair)) return false;
-  list.push(pair);
+  h.dicts.add(id);
+  spool(id, key, ["s", sid]);
   return true;
 }
 
@@ -94,6 +168,12 @@ export async function* jsonl(file: string) {
   }
 }
 
+/** Lines of a text file (TSV), without loading it whole. */
+export async function* lines(file: string) {
+  const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+  for await (const line of rl) if (line) yield line;
+}
+
 // ---------------------------------------------------------------- downloading
 
 /**
@@ -112,14 +192,14 @@ export function download(out: string, url: string, opts: { gzip?: boolean; userA
   fs.renameSync(dest + ".part", dest);
 }
 
-/** Extracts a zip into raw/<dir> once. */
-export function unzip(zip: string, dir: string) {
+/** Extracts a zip, .tgz or .tar.bz2 into raw/<dir> once. */
+export function extract(archive: string, dir: string) {
   const dest = raw(dir);
   if (fs.existsSync(dest)) return;
   fs.mkdirSync(dest + ".part", { recursive: true });
-  // GNU tar (Linux) can't read zip; Windows ships bsdtar but not unzip
-  if (process.platform === "win32") execFileSync("tar", ["-xf", raw(zip), "-C", dest + ".part"], { stdio: "inherit" });
-  else execFileSync("unzip", ["-oq", raw(zip), "-d", dest + ".part"], { stdio: "inherit" });
+  if (archive.endsWith(".zip") && process.platform !== "win32") execFileSync("unzip", ["-oq", raw(archive), "-d", dest + ".part"], { stdio: "inherit" });
+  // GNU tar (Linux) can't read zip; Windows ships bsdtar, which can
+  else execFileSync("tar", ["-xf", raw(archive), "-C", dest + ".part"], { stdio: "inherit" });
   fs.renameSync(dest + ".part", dest);
 }
 

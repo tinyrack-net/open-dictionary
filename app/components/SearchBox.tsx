@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { search } from "~/lib/data";
 import { useT } from "~/lib/i18n";
-import { headLanguages, maskHas } from "~/lib/dicts";
+import { headLanguages, langPair, maskHas } from "~/lib/dicts";
 import { DICTIONARIES, dictMask, useSettings } from "~/lib/settings";
 import type { IndexRow } from "~/lib/types";
 
@@ -95,8 +95,9 @@ export function SearchBox({ initial = "", large, autoFocus }: { initial?: string
                 <TRAutocomplete.Item key={row[0]} value={row} className="flex items-center justify-between gap-tinyrack-md">
                   <TRText truncate>{row[0]}</TRText>
                   <TRText as="span" className="flex shrink-0 gap-tinyrack-2xs">
-                    {DICTIONARIES.filter((d) => maskHas(row[1], d.id)).map((d) => (
-                      <TRBadge key={d.id}>{d.short}</TRBadge>
+                    {/* which kinds of dictionary have the word: one badge per language pair */}
+                    {[...new Set(DICTIONARIES.filter((d) => d.kind === "dictionary" && maskHas(row[1], d.id)).map((d) => langPair(d, t)))].map((pair) => (
+                      <TRBadge key={pair}>{pair}</TRBadge>
                     ))}
                   </TRText>
                 </TRAutocomplete.Item>

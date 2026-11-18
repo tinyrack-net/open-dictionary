@@ -129,13 +129,14 @@ export interface Backlink {
 }
 
 /**
- * Example sentence pair from a parallel corpus, matched by an exact whole-word occurrence. `text` is
- * the side that contains the headword; `translation` is the other side.
+ * A sentence of a parallel corpus with its translations, stored once in the dictionary's sentence store
+ * (d/<id>/s/<shard>.json, by sentence id) and listed by id under every headword it contains.
  */
-export interface SentencePair {
+export interface Sentence {
   lang: string;
   text: string;
-  translation: { lang: string; text: string };
+  /** the corpus's translations of this sentence, in its order */
+  translations: { lang: string; text: string }[];
 }
 
 /**
@@ -147,8 +148,8 @@ export interface DictPart {
   entries?: DictEntry[];
   /** entries of the dictionary that point at this headword (e.g. "given as a translation of") */
   backlinks?: Backlink[];
-  /** example sentence pairs (sentence corpora) */
-  pairs?: SentencePair[];
+  /** sentences that contain the headword exactly (ids in the dictionary's sentence store) */
+  sentences?: number[];
 }
 
 /** Everything loaded for one headword: per dictionary id, whatever that dictionary has. */

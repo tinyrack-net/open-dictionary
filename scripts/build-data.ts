@@ -4,6 +4,8 @@
 //
 // Run: pnpm build-data            (LIMIT=50000 pnpm build-data reads fewer lines per JSONL file)
 import { dictById } from "../app/lib/dicts.ts";
+import fs from "node:fs";
+import { closeSpools, SPOOL } from "./lib/core.ts";
 import { writeSite } from "./lib/output.ts";
 import { SOURCES } from "./sources/index.ts";
 
@@ -11,8 +13,11 @@ const t0 = Date.now();
 for (const s of SOURCES)
   for (const id of s.dictionaries) if (!dictById.has(id)) throw new Error(`${s.name}: dictionary "${id}" is not in DICTIONARIES (app/lib/dicts.ts)`);
 
+fs.rmSync(SPOOL, { recursive: true, force: true });
 for (const s of SOURCES) console.log(`${s.name}: ${await s.build()}`);
 for (const s of SOURCES) if (s.after) console.log(`${s.name}: ${await s.after()}`);
+closeSpools();
 console.log("writing data/site");
-const version = writeSite();
+const version = await writeSite();
+fs.rmSync(SPOOL, { recursive: true, force: true });
 console.log(`data version ${version}, done in ${((Date.now() - t0) / 1000).toFixed(0)}s, peak RSS ${(process.resourceUsage().maxRSS / 1024 / 1024).toFixed(1)} GB`);
