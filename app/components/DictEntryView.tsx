@@ -2,7 +2,6 @@
 // contains, in the source's order, and has no code that depends on which dictionary it came from.
 // The only display rule is the same for every source: long lists show their first items and a
 // "show all" button (nothing is dropped).
-import { TRAccordion } from "@tinyrack/ui/components/accordion";
 import { TRBadge } from "@tinyrack/ui/components/badge";
 import { TRButton } from "@tinyrack/ui/components/button";
 import { TRCollapsible } from "@tinyrack/ui/components/collapsible";
@@ -189,7 +188,7 @@ function Translations({ translations }: { translations: Translation[] }) {
   );
 }
 
-/** The body of a sense, i.e. what shows when the row is expanded. */
+/** The body of a sense: examples and word lists, shown under its gloss. */
 function SenseDetail({ sense }: { sense: Sense }) {
   return (
     <TRText as="span" className="flex flex-col gap-tinyrack-sm">
@@ -221,47 +220,30 @@ function SenseText({ sense, n }: { sense: Sense; n: number }) {
 }
 
 /**
- * Senses as rows. A sense with translations shows them inline (bilingual dictionaries); a sense with
- * examples or word lists expands in place.
+ * Senses as rows, everything visible: gloss, then translations (bilingual dictionaries), examples and
+ * word lists. Plain text, so any part of a row can be selected and copied.
  */
 function Senses({ senses }: { senses: Sense[] }) {
   return (
     <Collapsed items={senses}>
       {(shown) => (
-        <TRAccordion.Root multiple className="divide-y-tinyrack-default divide-tinyrack-border">
-          {shown.map((s, i) => {
-            const n = i + 1;
-            const expandable = !!(s.examples?.length || s.relations);
-            const head = (
-              <TRText as="span" className="flex flex-col gap-tinyrack-2xs">
-                <SenseText sense={s} n={n} />
-                {s.translations && (
-                  <TRText as="span" className="pl-tinyrack-xl">
-                    <Translations translations={s.translations} />
-                  </TRText>
-                )}
-              </TRText>
-            );
-            if (!expandable)
-              return (
-                <TRText as="span" key={i} className="block py-tinyrack-sm pl-tinyrack-md pr-tinyrack-md sm:pl-tinyrack-lg">
-                  {head}
+        <ol className="divide-y-tinyrack-default divide-tinyrack-border">
+          {shown.map((s, i) => (
+            <li key={i} className="flex flex-col gap-tinyrack-xs py-tinyrack-sm pr-tinyrack-md">
+              <SenseText sense={s} n={i + 1} />
+              {s.translations && (
+                <TRText as="span" className="pl-tinyrack-xl">
+                  <Translations translations={s.translations} />
                 </TRText>
-              );
-            return (
-              <TRAccordion.Item key={i} value={String(i)}>
-                <TRAccordion.Header>
-                  <TRAccordion.Trigger className="min-h-0 py-tinyrack-sm">{head}</TRAccordion.Trigger>
-                </TRAccordion.Header>
-                <TRAccordion.Panel>
-                  <TRText as="span" className="block sm:pl-tinyrack-xl">
-                    <SenseDetail sense={s} />
-                  </TRText>
-                </TRAccordion.Panel>
-              </TRAccordion.Item>
-            );
-          })}
-        </TRAccordion.Root>
+              )}
+              {!!(s.examples?.length || s.relations) && (
+                <TRText as="span" className="block pl-tinyrack-xl">
+                  <SenseDetail sense={s} />
+                </TRText>
+              )}
+            </li>
+          ))}
+        </ol>
       )}
     </Collapsed>
   );
