@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "open-dictionary",
   "compatibility_date": "2026-11-12",
+  "routes": [{ "pattern": "dictionary.tinyrack.net", "custom_domain": true }],
   // Static assets only: no Worker script, so every request is a free static asset request.
   "assets": {
     "directory": "./build/client",
