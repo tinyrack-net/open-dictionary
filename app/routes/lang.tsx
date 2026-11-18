@@ -1,6 +1,5 @@
 import { TRLink } from "@tinyrack/ui/components/link";
 import { TRLinkButton } from "@tinyrack/ui/components/link-button";
-import { TRSeparator } from "@tinyrack/ui/components/separator";
 import { TRText } from "@tinyrack/ui/components/text";
 import { BookOpen, Bookmark } from "lucide-react";
 import { data, Link, Outlet, useLocation, useParams, useSearchParams } from "react-router";
@@ -28,46 +27,58 @@ export default function LangLayout() {
   // the prerendered shell can't know ?word=, so fill the search box only after hydration
   const word = hydrated ? (params.get("word") ?? "") : "";
 
+  const savedLink = (
+    <TRLinkButton
+      appearance="ghost"
+      aria-label={t.savedWords}
+      title={t.savedWords}
+      render={<Link to={settings.pageHref("/saved")} />}
+      className="px-tinyrack-sm"
+    >
+      <Bookmark aria-hidden="true" size={18} />
+    </TRLinkButton>
+  );
+
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-tinyrack-chrome border-b-tinyrack-default border-tinyrack-border bg-tinyrack-surface">
-        <nav className="page-frame flex items-center gap-tinyrack-md py-tinyrack-sm">
-          <TRLink render={<Link to={settings.pageHref("")} />} underline="none" className="flex shrink-0 items-center gap-tinyrack-xs">
-            <BookOpen aria-hidden="true" size={20} />
-            <TRText weight="heading" className={home ? "" : "max-sm:hidden"}>
-              {t.siteName}
-            </TRText>
-          </TRLink>
-          <TRText as="span" className="min-w-0 flex-1">
-            {!home && <SearchBox key={word} initial={word} />}
-          </TRText>
-          <TRLinkButton
-            appearance="ghost"
-            aria-label={t.savedWords}
-            title={t.savedWords}
-            render={<Link to={settings.pageHref("/saved")} />}
-            className="px-tinyrack-sm"
-          >
-            <Bookmark aria-hidden="true" size={18} />
-          </TRLinkButton>
+      {home ? (
+        // home: no bar, just the two actions in the corner so the search box stands alone
+        <nav className="page-frame flex justify-end gap-tinyrack-xs py-tinyrack-sm">
+          {savedLink}
           <SettingsMenu />
         </nav>
-      </header>
+      ) : (
+        <header className="sticky top-0 z-tinyrack-chrome border-b-tinyrack-default border-tinyrack-border bg-tinyrack-surface">
+          <nav className="page-frame flex items-center gap-tinyrack-md py-tinyrack-sm">
+            <TRLink render={<Link to={settings.pageHref("")} />} underline="none" className="flex shrink-0 items-center gap-tinyrack-xs">
+              <BookOpen aria-hidden="true" size={20} />
+              <TRText weight="heading" className="max-sm:hidden">
+                {t.siteName}
+              </TRText>
+            </TRLink>
+            <TRText as="span" className="min-w-0 flex-1">
+              <SearchBox key={word} initial={word} />
+            </TRText>
+            {savedLink}
+            <SettingsMenu />
+          </nav>
+        </header>
+      )}
 
-      <main className="page-frame flex-1">
+      <main className={home ? "page-frame flex flex-1 flex-col justify-center" : "page-frame flex-1"}>
         <Outlet />
       </main>
 
-      <footer className="page-frame flex flex-col gap-tinyrack-sm py-tinyrack-xl sm:flex-row sm:items-center sm:justify-between">
-        <TRSeparator className="sm:hidden" />
-        <TRText variant="bodySm" color="muted">
-          {t.dataFrom} <TRLink href="https://en-word.net/">Open English WordNet</TRLink> (CC BY 4.0) {t.and}{" "}
-          <TRLink href="https://en.wiktionary.org/">Wiktionary</TRLink> (<TRLink href="https://kaikki.org/">kaikki.org</TRLink>{" "}
-          {t.via}, CC BY-SA 4.0)
-        </TRText>
-        <TRText variant="bodySm" className="flex gap-tinyrack-lg">
-          <TRLink render={<Link to={settings.pageHref("/about")} />}>{t.sourcesLicenses}</TRLink>
-          <TRLink href="https://github.com/tinyrack-net/open-dictionary">GitHub</TRLink>
+      {/* Credits per source are on every word card and on the about page; the footer only links there. */}
+      <footer className="page-frame py-tinyrack-lg">
+        <TRText as="p" variant="bodySm" color="muted" align="center" className="flex justify-center gap-tinyrack-sm">
+          <TRLink variant="muted" render={<Link to={settings.pageHref("/about")} />}>
+            {t.sourcesLicenses}
+          </TRLink>
+          <TRText aria-hidden="true">·</TRText>
+          <TRLink variant="muted" href="https://github.com/tinyrack-net/open-dictionary">
+            GitHub
+          </TRLink>
         </TRText>
       </footer>
     </div>

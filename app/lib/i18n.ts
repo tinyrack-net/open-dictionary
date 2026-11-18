@@ -50,9 +50,6 @@ const en = {
   clearAll: "Clear all",
   nothingSaved: "No saved words yet. Tap the bookmark on a word page to save it.",
   storedOnDevice: "Stored on this device only.",
-  dataFrom: "Data from",
-  and: "and",
-  via: "via",
   sourcesLicenses: "Sources & licenses",
   aboutIntro:
     "Every definition on this site comes from openly licensed data and is shown as the source wrote it. The processed dataset is redistributed under CC BY-SA 4.0, as required by Wiktionary's license.",
@@ -121,9 +118,6 @@ const ko: typeof en = {
   clearAll: "모두 지우기",
   nothingSaved: "아직 저장한 단어가 없습니다. 단어 페이지에서 책갈피를 눌러 저장하세요.",
   storedOnDevice: "이 기기에만 저장됩니다.",
-  dataFrom: "데이터 출처:",
-  and: "및",
-  via: "가공",
   sourcesLicenses: "출처 및 라이선스",
   aboutIntro:
     "이 사이트의 모든 뜻풀이는 공개 라이선스 데이터에서 가져와 출처에 적힌 그대로 보여 줍니다. 가공한 데이터는 위키낱말사전 라이선스에 따라 CC BY-SA 4.0으로 재배포합니다.",

@@ -1,6 +1,7 @@
 import { TRButton } from "@tinyrack/ui/components/button";
 import { TRLink } from "@tinyrack/ui/components/link";
 import { TRText } from "@tinyrack/ui/components/text";
+import { BookOpen } from "lucide-react";
 import { Link } from "react-router";
 import type { Route } from "./+types/home";
 import { SearchBox } from "~/components/SearchBox";
@@ -17,14 +18,18 @@ export function meta({ params }: Route.MetaArgs) {
 
 const SAMPLES = ["serendipity", "dictionary", "run", "사랑", "먹다", "사전"];
 
-/** The search box, then the words you looked up recently (on this device) or a few to try. */
+/**
+ * The search box, centered on the screen (the layout has no bar here), then the words you looked up
+ * recently (on this device) or a few to try.
+ */
 export default function Home() {
   const t = useT();
   const settings = useSettings();
   const recent = useRecent();
   return (
-    <section className="mx-auto flex max-w-tinyrack-overlay-width-md flex-col gap-tinyrack-lg pt-tinyrack-3xl pb-tinyrack-2xl sm:pt-tinyrack-3xl">
-      <TRText as="h1" variant="headingLg" align="center">
+    <section className="mx-auto flex w-full max-w-tinyrack-overlay-width-md flex-col gap-tinyrack-lg pt-tinyrack-xl pb-tinyrack-3xl">
+      <TRText as="h1" variant="headingLg" align="center" className="flex items-center justify-center gap-tinyrack-sm">
+        <BookOpen aria-hidden="true" size={28} />
         {t.siteName}
       </TRText>
       <SearchBox large autoFocus />
