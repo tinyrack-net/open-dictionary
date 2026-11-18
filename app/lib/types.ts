@@ -66,6 +66,12 @@ export interface Translation {
   tags?: string[];
 }
 
+/** A definition written in another language. */
+export interface GlossText {
+  lang: string;
+  text: string;
+}
+
 /** Named word lists attached to a sense, e.g. { synonyms: [...], hypernyms: [...] }. */
 export type Relations = Partial<Record<RelationKind, WordRef[]>>;
 export type RelationKind = "synonyms" | "antonyms" | "hypernyms" | "hyponyms" | "related" | "derived";
@@ -73,6 +79,10 @@ export type RelationKind = "synonyms" | "antonyms" | "hypernyms" | "hyponyms" | 
 export interface Sense {
   /** the definition, as written by the source */
   gloss: string;
+  /** the same definition in another language, when the source writes one (한국어기초사전: English) */
+  glosses?: GlossText[];
+  /** usage notes and sentence patterns, as the source writes them ("1이 첨예하다") */
+  notes?: string[];
   /** broader sense this one belongs to (Wiktionary sub-senses) */
   parent?: string;
   tags?: string[];
@@ -100,6 +110,8 @@ export interface DictEntry {
   /** full inflection tables, when the source has them */
   tables?: FormTable[];
   etymology?: string;
+  /** notes on the whole entry, as the source writes them ("일부 명사 뒤에 붙는다.") */
+  notes?: string[];
   senses: Sense[];
   relations?: Relations;
 }
@@ -132,6 +144,10 @@ export interface DictData {
   enko: DictEntry[];
   /** English Wiktionary, Korean entries + backlinks from English entries' Korean translations */
   ko: { entries?: DictEntry[]; backlinks?: Backlink[] };
+  /** 한국어기초사전: Korean entries + backlinks on English words given as a sense's English equivalent */
+  kr: { entries?: DictEntry[]; backlinks?: Backlink[] };
+  /** Korean Wiktionary, English entries defined in Korean */
+  kwen: DictEntry[];
   /** Tatoeba English–Korean pairs */
   ex: SentencePair[];
 }
@@ -144,6 +160,9 @@ export interface Entry {
   enko?: DictEntry[];
   ko?: DictEntry[];
   koBacklinks?: Backlink[];
+  kr?: DictEntry[];
+  krBacklinks?: Backlink[];
+  kwen?: DictEntry[];
   pairs?: SentencePair[];
 }
 

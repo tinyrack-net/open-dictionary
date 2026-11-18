@@ -3,6 +3,8 @@
 //   raw/oewn/*.json      Open English WordNet 2025 (JSON release)
 //   raw/en.jsonl.gz      Wiktionary English entries (kaikki.org / wiktextract)
 //   raw/ko.jsonl.gz      Wiktionary Korean entries  (kaikki.org / wiktextract)
+//   raw/kowikt-en.jsonl.gz  Korean Wiktionary, English entries (kaikki.org / wiktextract)
+//   raw/krdict/*.json    한국어기초사전 (National Institute of Korean Language), full JSON export
 //   raw/wordfreq.json    word frequency (wordfreq 3.1, Zipf scale)        optional, search ranking only
 //   raw/tatoeba/*.tsv    English–Korean sentence pairs (Tatoeba)          optional
 //
@@ -32,6 +34,7 @@ import type {
   DictEntry,
   Example,
   Form,
+  GlossText,
   FormTable,
   IndexRow,
   Pron,
@@ -67,6 +70,9 @@ interface Collected {
   enko?: DictEntry[];
   ko?: DictEntry[];
   koBacklinks?: Backlink[];
+  kr?: DictEntry[];
+  krBacklinks?: Backlink[];
+  kwen?: DictEntry[];
   pairs?: SentencePair[];
 }
 
@@ -317,6 +323,163 @@ async function loadWiktKorean() {
   console.log(`wiktionary ko: ${count} entries, ${backlinked} korean words with english backlinks`);
 }
 
+// ---------------------------------------------------------------- Korean Wiktionary: English entries
+/**
+ * The Korean edition of Wiktionary defines English words in Korean. Same extractor (wiktextract) and
+ * format as the English edition, so the same converter applies. Its relation lists label the sense
+ * they belong to with `sense`, which `refs` doesn't read; they are kept on the entry, as the source
+ * lists them.
+ */
+async function loadKoWiktEnglish() {
+  const file = path.join(RAW, "kowikt-en.jsonl.gz");
+  if (!fs.existsSync(file)) return console.log("kowiktionary en: skipped (raw/kowikt-en.jsonl.gz missing)");
+  let count = 0;
+  for await (const o of jsonl(file)) {
+    if (!o.word || o.lang_code !== "en") continue;
+    const entry = wiktEntry({ ...o, etymology_text: o.etymology_text ?? o.etymology_texts?.join("\n") });
+    if (!entry.senses?.length) continue;
+    (entryFor(o.word).kwen ??= []).push(entry);
+    count++;
+  }
+  console.log(`kowiktionary en: ${count} entries`);
+}
+
+// ---------------------------------------------------------------- 한국어기초사전 (krdict)
+/**
+ * The export is LMF-style JSON: every object carries its fields as `feat: [{ att, val }]` (one object
+ * instead of a list when there is only one), so `feats` turns that into a map of value lists.
+ *
+ * Mapping, field by field, in source order:
+ *   entry:  writtenForm -> word; partOfSpeech (or the lexical unit for idioms, proverbs…) -> pos;
+ *           homonym_number -> etym; origin (hanja, loanword spelling) and variant -> alt;
+ *           WordForm 발음 -> pron (text only, see krEntry); WordForm 활용 -> forms ("활용");
+ *           RelatedForm -> relations.derived (파생어) / related (☞ cross-references);
+ *           annotation -> notes
+ *   sense:  definition -> gloss; English definition -> glosses; English equivalent -> translations
+ *           (the source joins several with "; ", kept as one string); syntacticPattern, annotation,
+ *           syntacticAnnotation -> notes; SenseExample -> examples (each turn of a dialogue on its own
+ *           line); SenseRelation -> relations by type (유의어, 반대말, 참고어, 준말 …, tagged as such)
+ *
+ * Every English equivalent also gives the English word a backlink, like Wiktionary's translations.
+ *
+ * License: the text is CC BY-SA 2.0 KR. Its share-alike clause applies to this converted data, which
+ * is redistributed under the same license (d/kr/), credited to 국립국어원 with a link to the license.
+ */
+type Feats = Record<string, string[]>;
+const list = <T>(x: T | T[] | undefined | null): T[] => (Array.isArray(x) ? x : x == null ? [] : [x]);
+
+/**
+ * The export writes its text XML-escaped (&quot; &apos; &lt; &gt; &lsqb; &rsqb;), and a few values
+ * wrap a word in <I>…</I> for italics. Both are encoding, not content: decode the escapes and drop
+ * the italic markup, keeping the text.
+ */
+const ENTITIES: Record<string, string> = { quot: '"', apos: "'", lt: "<", gt: ">", amp: "&", lsqb: "[", rsqb: "]" };
+const krText = (v: string) =>
+  v
+    .replace(/&(quot|apos|lt|gt|lsqb|rsqb);/g, (_, e: string) => ENTITIES[e])
+    .replace(/<\/?I>/gi, "")
+    .replace(/&amp;/g, "&");
+
+function feats(f: any): Feats {
+  const out: Feats = {};
+  for (const x of list<any>(f)) if (x?.att && typeof x.val === "string") (out[x.att] ??= []).push(krText(x.val));
+  return out;
+}
+const one = (f: Feats, k: string) => f[k]?.[0]?.trim() || undefined;
+
+/** The source's relation types: synonyms and antonyms by kind, every other type as a tagged related word. */
+const KR_RELATION: Record<string, RelationKind> = { 유의어: "synonyms", 반대말: "antonyms" };
+
+function krSense(s: any): Sense {
+  const f = feats(s.feat);
+  const en = list<any>(s.Equivalent).map((q) => feats(q.feat)).filter((q) => one(q, "language") === "영어");
+  const relations: Relations = {};
+  for (const r of list<any>(s.SenseRelation)) {
+    const rf = feats(r.feat);
+    const type = one(rf, "type");
+    const word = one(rf, "lemma");
+    if (!type || !word) continue;
+    const kind = KR_RELATION[type] ?? "related";
+    (relations[kind] ??= []).push(compact({ word, tags: kind === "related" ? [type] : undefined }));
+  }
+  return compact({
+    gloss: one(f, "definition") ?? "",
+    glosses: en.flatMap((q): GlossText[] => (one(q, "definition") ? [{ lang: "en", text: one(q, "definition")! }] : [])),
+    notes: [...(f.syntacticPattern ?? []), ...(f.annotation ?? []), ...(f.syntacticAnnotation ?? [])].map((x) => x.trim()).filter(Boolean),
+    // the source lists several equivalents in one field, "eat; have; consume": one translation each, in order
+    translations: en.flatMap((q) => (one(q, "lemma") ?? "").split(/\s*;\s*/).filter(Boolean).map((word): Translation => ({ word, lang: "en" }))),
+    examples: list<any>(s.SenseExample).flatMap((x): Example[] => {
+      const xf = feats(x.feat);
+      const text = (xf.example ?? []).map((t) => t.trim()).filter(Boolean);
+      return text.length ? [{ text: text.join("\n") }] : [];
+    }),
+    relations: compact(relations),
+  });
+}
+
+function krEntry(e: any): DictEntry | undefined {
+  const f = feats(e.feat);
+  const lemmas = list<any>(e.Lemma).map((l) => feats(l.feat));
+  const word = lemmas.map((l) => one(l, "writtenForm")).find(Boolean);
+  if (!word) return undefined;
+  const pos = one(f, "partOfSpeech");
+  const unit = one(f, "lexicalUnit");
+  const homonym = Number(one(f, "homonym_number") ?? 0);
+  const wordForms = list<any>(e.WordForm).map((w) => ({ f: feats(w.feat), short: feats(w.FormRepresentation?.feat) }));
+  const sounds = wordForms.filter((w) => one(w.f, "type") === "발음");
+  const conj = wordForms.filter((w) => one(w.f, "type") === "활용");
+  const related = list<any>(e.RelatedForm).map((r) => feats(r.feat));
+  return compact({
+    word,
+    // idioms and proverbs have no part of speech; the source's lexical unit names what they are
+    pos: pos && pos !== "품사 없음" ? pos : (unit ?? pos ?? ""),
+    etym: homonym > 0 ? homonym : undefined,
+    alt: [...(f.origin ?? []), ...lemmas.flatMap((l) => l.variant ?? [])].map((x) => x.trim()).filter(Boolean),
+    pron: sounds.flatMap((w) => (w.f.pronunciation ?? []).map((text): Pron => ({ text, kind: "pronunciation" }))),
+    // Recordings are not used: the site's copyright policy licenses its text under CC BY-SA 2.0 KR but
+    // gives multimedia files (sound, images, video) their own per-file terms, which the export doesn't
+    // include. Only the written pronunciation (text) is kept.
+    forms: conj.flatMap((w): Form[] => [
+      ...(one(w.f, "writtenForm") ? [compact({ form: one(w.f, "writtenForm")!, tags: ["활용"] })] : []),
+      ...(one(w.short, "writtenForm") ? [compact({ form: one(w.short, "writtenForm")!, tags: ["활용", one(w.short, "type")!].filter(Boolean) })] : []),
+    ]),
+    notes: (f.annotation ?? []).map((x) => x.trim()).filter(Boolean),
+    senses: list<any>(e.Sense).map(krSense).filter((s) => s.gloss),
+    relations: compact({
+      derived: related.filter((r) => one(r, "type") === "파생어" && one(r, "writtenForm")).map((r): WordRef => ({ word: one(r, "writtenForm")! })),
+      related: related.filter((r) => one(r, "type") !== "파생어" && one(r, "writtenForm")).map((r): WordRef => compact({ word: one(r, "writtenForm")!, tags: [one(r, "type")!] })),
+    } as Relations),
+  });
+}
+
+function loadKrdict() {
+  const dir = path.join(RAW, "krdict");
+  if (!fs.existsSync(dir)) return console.log("krdict: skipped (raw/krdict missing)");
+  // files are numbered 1_…, 2_…, 10_…: read them in that (numeric) order, which is the source's order
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort((a, b) => parseInt(a) - parseInt(b));
+  let count = 0;
+  let backlinks = 0;
+  for (const file of files) {
+    const data = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+    for (const raw of list<any>(data.LexicalResource?.Lexicon?.LexicalEntry)) {
+      const entry = krEntry(raw);
+      if (!entry || !entry.senses.length) continue;
+      (entryFor(entry.word).kr ??= []).push(entry);
+      count++;
+      for (const s of entry.senses)
+        for (const t of s.translations ?? [])
+        {
+          const links = (entryFor(t.word).krBacklinks ??= []);
+          if (!links.some((b) => b.word === entry.word && b.pos === entry.pos && b.sense === s.gloss)) {
+            links.push({ word: entry.word, lang: "ko", pos: entry.pos, sense: s.gloss });
+            backlinks++;
+          }
+        }
+    }
+  }
+  console.log(`krdict: ${count} entries from ${files.length} files, ${backlinks} english backlinks`);
+}
+
 // ---------------------------------------------------------------- word frequency (search ranking only)
 function loadFrequency() {
   const file = path.join(RAW, "wordfreq.json");
@@ -373,14 +536,24 @@ function loadTatoeba() {
       add(tokens[i], p);
       if (tokens[i + 1]) add(`${tokens[i]} ${tokens[i + 1]}`, p);
     }
-    for (const word of p.ko.split(/[\s.,!?"'()…·:;]+/).filter(Boolean)) if (entries.get(word)?.ko || entries.get(word)?.koBacklinks) add(word, p);
+    for (const word of p.ko.split(/[\s.,!?"'()…·:;]+/).filter(Boolean)) {
+      const e = entries.get(word);
+      if (e?.ko || e?.koBacklinks || e?.kr) add(word, p);
+    }
   }
   console.log(`tatoeba: ${pairs.length} sentence pairs, ${attached} exact word matches`);
 }
 
 // ---------------------------------------------------------------- output
 function mask(e: Collected): number {
-  return (e.wn ? DICT.wn : 0) | (e.en ? DICT.en : 0) | (e.enko ? DICT.enko : 0) | (e.ko || e.koBacklinks ? DICT.ko : 0);
+  return (
+    (e.wn ? DICT.wn : 0) |
+    (e.en ? DICT.en : 0) |
+    (e.enko ? DICT.enko : 0) |
+    (e.ko || e.koBacklinks ? DICT.ko : 0) |
+    (e.kr || e.krBacklinks ? DICT.kr : 0) |
+    (e.kwen ? DICT.kwen : 0)
+  );
 }
 
 function rmrf(dir: string) {
@@ -394,6 +567,8 @@ const PART: { [D in ChunkId]: (e: Collected) => DictData[D] | undefined } = {
   en: (e) => e.en,
   enko: (e) => e.enko,
   ko: (e) => (e.ko || e.koBacklinks ? compact({ entries: e.ko, backlinks: e.koBacklinks }) : undefined),
+  kr: (e) => (e.kr || e.krBacklinks ? compact({ entries: e.kr, backlinks: e.krBacklinks }) : undefined),
+  kwen: (e) => e.kwen,
   ex: (e) => e.pairs,
 };
 
@@ -502,12 +677,14 @@ function writeIndex() {
 }
 
 function writeMeta(sizes: Record<string, unknown>) {
-  const stats = { headwords: entries.size, wn: 0, en: 0, enko: 0, ko: 0 };
+  const stats = { headwords: entries.size, wn: 0, en: 0, enko: 0, ko: 0, kr: 0, kwen: 0 };
   for (const e of entries.values()) {
     if (e.wn) stats.wn++;
     if (e.en) stats.en++;
     if (e.enko) stats.enko++;
     if (e.ko || e.koBacklinks) stats.ko++;
+    if (e.kr || e.krBacklinks) stats.kr++;
+    if (e.kwen) stats.kwen++;
   }
   fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ builtAt: new Date().toISOString(), stats, sizes }, null, 2));
   console.log("stats", stats);
@@ -517,6 +694,8 @@ const t0 = Date.now();
 loadWordNet();
 await loadWiktEnglish();
 await loadWiktKorean();
+await loadKoWiktEnglish();
+loadKrdict();
 loadFrequency();
 loadTatoeba();
 const sizes = writeEntries();

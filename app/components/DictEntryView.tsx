@@ -12,7 +12,7 @@ import { Link } from "react-router";
 import { AudioButton } from "~/components/AudioButton";
 import { posLabel, tagLabel, useT } from "~/lib/i18n";
 import { useSettings } from "~/lib/settings";
-import type { DictEntry, Example, Form, Pron, RelationKind, Relations, Sense, Translation, WordRef } from "~/lib/types";
+import type { DictEntry, Example, Form, GlossText, Pron, RelationKind, Relations, Sense, Translation, WordRef } from "~/lib/types";
 
 /** How many items a list shows before "show all". Same for every source and list. */
 export const LIST_PREVIEW = 6;
@@ -143,7 +143,7 @@ function Examples({ examples }: { examples: Example[] }) {
           <TRText as="span" className="flex flex-col gap-tinyrack-sm border-l-tinyrack-strong border-tinyrack-border pl-tinyrack-md">
             {shown.map((x, i) => (
               <blockquote key={i} className="flex flex-col gap-tinyrack-2xs">
-                <TRText as="p" variant="bodySm" className="leading-tinyrack-lg">
+                <TRText as="p" variant="bodySm" className="leading-tinyrack-lg whitespace-pre-line">
                   {x.text}
                 </TRText>
                 {x.roman && (
@@ -194,6 +194,34 @@ function Translations({ translations }: { translations: Translation[] }) {
   );
 }
 
+/** Usage notes and sentence patterns, as the source writes them. */
+function Notes({ notes }: { notes?: string[] }) {
+  if (!notes?.length) return null;
+  return (
+    <TRText as="p" variant="bodySm" color="muted" className="flex flex-wrap gap-x-tinyrack-md gap-y-tinyrack-2xs">
+      {notes.map((n, i) => (
+        <TRText key={i}>{n}</TRText>
+      ))}
+    </TRText>
+  );
+}
+
+/** The same definition in other languages, each labelled with its language. */
+function OtherGlosses({ glosses }: { glosses?: GlossText[] }) {
+  const t = useT();
+  if (!glosses?.length) return null;
+  return (
+    <>
+      {glosses.map((g, i) => (
+        <TRText as="p" key={i} variant="bodySm" color="muted" lang={g.lang}>
+          <TRBadge className="mr-tinyrack-xs align-middle">{t.langName[g.lang] ?? g.lang}</TRBadge>
+          {g.text}
+        </TRText>
+      ))}
+    </>
+  );
+}
+
 /** The body of a sense: examples and word lists, shown under its gloss. */
 function SenseDetail({ sense }: { sense: Sense }) {
   return (
@@ -237,9 +265,11 @@ function Senses({ senses }: { senses: Sense[] }) {
           {shown.map((s, i) => (
             <li key={i} className="flex flex-col gap-tinyrack-sm py-tinyrack-lg pr-tinyrack-md first:pt-tinyrack-sm">
               <SenseText sense={s} n={i + 1} />
-              {s.translations && (
-                <TRText as="span" className="pl-tinyrack-xl">
-                  <Translations translations={s.translations} />
+              {!!(s.translations || s.glosses || s.notes) && (
+                <TRText as="span" className="flex flex-col gap-tinyrack-2xs pl-tinyrack-xl">
+                  {s.translations && <Translations translations={s.translations} />}
+                  <OtherGlosses glosses={s.glosses} />
+                  <Notes notes={s.notes} />
                 </TRText>
               )}
               {!!(s.examples?.length || s.relations) && (
@@ -279,6 +309,7 @@ export function DictEntryView({ entry, numbered, heading }: { entry: DictEntry; 
       </TRText>
       <Prons pron={entry.pron} audio={entry.audio} />
       {entry.forms?.length ? <Forms forms={entry.forms} /> : null}
+      <Notes notes={entry.notes} />
       {entry.tables?.map((table) => (
         <TRCollapsible.Root key={table.kind}>
           <TRCollapsible.Trigger>{t.formTable(table.kind)}</TRCollapsible.Trigger>

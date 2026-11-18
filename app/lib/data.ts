@@ -122,8 +122,8 @@ export interface LoadedEntry {
   mask: number;
 }
 
-/** Sentence pairs are bilingual, so they are shown with either translation dictionary. */
-const wantsPairs = (dicts: DictId[]) => dicts.includes("enko") || dicts.includes("ko");
+/** Sentence pairs are bilingual, so they are shown with any English–Korean dictionary (all but the two English-only ones). */
+const wantsPairs = (dicts: DictId[]) => dicts.some((d) => d !== "wn" && d !== "en");
 
 /** Data paths a lookup will need: index + chunks for the selected dictionaries. */
 export function lookupPaths(word: string, dicts: DictId[]): string[] {
@@ -139,18 +139,21 @@ export function lookupPaths(word: string, dicts: DictId[]): string[] {
  */
 export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEntry | null> {
   const key = entryKey(word);
+  const want = <D extends ChunkId>(id: D, on: boolean) => (on ? getPart(id, key) : undefined);
   const parts = {
-    wn: dicts.includes("wn") ? getPart("wn", key) : undefined,
-    en: dicts.includes("en") ? getPart("en", key) : undefined,
-    enko: dicts.includes("enko") ? getPart("enko", key) : undefined,
-    ko: dicts.includes("ko") ? getPart("ko", key) : undefined,
-    ex: wantsPairs(dicts) ? getPart("ex", key) : undefined,
+    wn: want("wn", dicts.includes("wn")),
+    en: want("en", dicts.includes("en")),
+    enko: want("enko", dicts.includes("enko")),
+    ko: want("ko", dicts.includes("ko")),
+    kr: want("kr", dicts.includes("kr")),
+    kwen: want("kwen", dicts.includes("kwen")),
+    ex: want("ex", wantsPairs(dicts)),
   };
   const row = await lookup(word);
   if (!row) return null;
   const [w, mask] = row;
   const entry: Entry = { w };
-  const [wn, en, enko, ko, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.ex]);
+  const [wn, en, enko, ko, kr, kwen, ex] = await Promise.all([parts.wn, parts.en, parts.enko, parts.ko, parts.kr, parts.kwen, parts.ex]);
   if (wn && mask & DICT.wn) entry.wn = wn;
   if (en && mask & DICT.en) entry.en = en;
   if (enko && mask & DICT.enko) entry.enko = enko;
@@ -158,6 +161,11 @@ export async function getEntry(word: string, dicts: DictId[]): Promise<LoadedEnt
     if (ko.entries) entry.ko = ko.entries;
     if (ko.backlinks) entry.koBacklinks = ko.backlinks;
   }
+  if (kr && mask & DICT.kr) {
+    if (kr.entries) entry.kr = kr.entries;
+    if (kr.backlinks) entry.krBacklinks = kr.backlinks;
+  }
+  if (kwen && mask & DICT.kwen) entry.kwen = kwen;
   if (ex) entry.pairs = ex;
   return { entry, mask };
 }
@@ -244,6 +252,6 @@ export async function search(query: string, limit = 10, mask = 0xff): Promise<In
 
 export interface Meta {
   builtAt: string;
-  stats: { headwords: number; wn: number; en: number; enko: number; ko: number };
+  stats: { headwords: number; wn: number; en: number; enko: number; ko: number; kr: number; kwen: number };
 }
 export const getMeta = () => cached<Meta>("meta.json");

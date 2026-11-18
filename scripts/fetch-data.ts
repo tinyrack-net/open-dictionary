@@ -1,6 +1,7 @@
-// Downloads the raw sources into ./raw (≈ 600 MB compressed):
-//   Wiktionary (kaikki.org), Open English WordNet, Tatoeba English–Korean sentences, and the
-//   wordfreq frequency lists (exported to raw/wordfreq.json with uv + Python).
+// Downloads the raw sources into ./raw (≈ 700 MB compressed):
+//   Wiktionary (kaikki.org: English edition, and the Korean edition's English entries), Open English
+//   WordNet, 한국어기초사전 (NIKL), Tatoeba English–Korean sentences, and the wordfreq frequency lists
+//   (exported to raw/wordfreq.json with uv + Python).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +13,8 @@ const files = [
   // kaikki.org serves gzip when asked; the compressed stream is stored as-is
   { out: "en.jsonl.gz", url: "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl", gzip: true },
   { out: "ko.jsonl.gz", url: "https://kaikki.org/dictionary/Korean/kaikki.org-dictionary-Korean.jsonl", gzip: true },
+  // Korean Wiktionary (ko.wiktionary.org): its English entries, defined in Korean
+  { out: "kowikt-en.jsonl.gz", url: "https://kaikki.org/kowiktionary/%EC%98%81%EC%96%B4/kaikki.org-dictionary-%EC%98%81%EC%96%B4.jsonl", gzip: true },
   { out: "oewn.zip", url: "https://github.com/globalwordnet/english-wordnet/releases/download/2025-edition/english-wordnet-2025-json.zip" },
   // Tatoeba (CC BY 2.0 FR): English–Korean links + the sentences on both sides
   { out: "tatoeba/eng-kor_links.tsv.bz2", url: "https://downloads.tatoeba.org/exports/per_language/eng/eng-kor_links.tsv.bz2" },
@@ -31,6 +34,26 @@ for (const f of files) {
   if (f.gzip) args.unshift("-H", "Accept-Encoding: gzip");
   execFileSync("curl", args, { stdio: "inherit" });
   fs.renameSync(dest + ".part", dest);
+}
+
+// 한국어기초사전 (CC BY-SA 2.0 KR): the full JSON export. The download id changes with every monthly
+// upload, so it is read from the download page (third button: JSON).
+const krdict = path.join(RAW, "krdict");
+if (!fs.existsSync(krdict)) {
+  const zip = path.join(RAW, "krdict.zip");
+  if (!fs.existsSync(zip)) {
+    const page = execFileSync("curl", ["-fsSL", "--retry", "5", "-A", "Mozilla/5.0", "https://krdict.korean.go.kr/download/downloadPopup"], { encoding: "utf8" });
+    const ids = [...page.matchAll(/batchDownload\('(\d+)'\)/g)].map((m) => m[1]);
+    const json = /batchDownload\('(\d+)'\)[^<]*<i[^>]*><\/i>\s*Json/i.exec(page)?.[1] ?? ids[2];
+    if (!json) throw new Error("krdict: JSON download id not found on the download page");
+    console.log(`downloading krdict (JSON export, id ${json})`);
+    execFileSync("curl", ["-fsSL", "--retry", "5", "--retry-all-errors", "-A", "Mozilla/5.0", "-o", zip + ".part", `https://krdict.korean.go.kr/dicBatchDownload?seq=${json}`], { stdio: "inherit" });
+    fs.renameSync(zip + ".part", zip);
+  }
+  fs.mkdirSync(krdict + ".part", { recursive: true });
+  if (process.platform === "win32") execFileSync("tar", ["-xf", zip, "-C", krdict + ".part"], { stdio: "inherit" });
+  else execFileSync("unzip", ["-oq", zip, "-d", krdict + ".part"], { stdio: "inherit" });
+  fs.renameSync(krdict + ".part", krdict);
 }
 
 const oewn = path.join(RAW, "oewn");

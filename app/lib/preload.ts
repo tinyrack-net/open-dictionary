@@ -27,7 +27,7 @@ export function preloadScript(): string {
     h = h >>> 0;
     function shard(n) { var w = Math.max(1, (n - 1).toString(16).length), s = (h % n).toString(16); while (s.length < w) s = "0" + s; return s; }
     var ids = dicts.slice();
-    if (dicts.indexOf("enko") >= 0 || dicts.indexOf("ko") >= 0) ids.push("ex");
+    if (dicts.some(function (id) { return id !== "wn" && id !== "en"; })) ids.push("ex");
     var paths = ["i/manifest.json"].concat(ids.map(function (id) { return "d/" + id + "/" + shard(SHARDS[id]) + ".json"; }));
     var out = (window.__odPreload = {});
     // A request cancelled by leaving the page (reload, back) rejects; nothing may be waiting on it

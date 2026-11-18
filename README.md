@@ -1,6 +1,6 @@
 # Open Dictionary
 
-A free, static English / English↔Korean dictionary built from open data, with React Router
+A free, static English / English↔Korean / Korean dictionary built from open data, with React Router
 (framework mode, `ssr: false` + prerender), [@tinyrack/ui](https://www.npmjs.com/package/@tinyrack/ui) and
 Tailwind CSS. It is hosted on Cloudflare Workers static assets.
 
@@ -10,7 +10,9 @@ Tailwind CSS. It is hosted on Cloudflare Workers static assets.
 |---|---|---|---|
 | English (WordNet) | `wordnet` | [Open English WordNet 2025](https://en-word.net/) | CC BY 4.0 |
 | English (Wiktionary) | `wiktionary` | [English Wiktionary](https://en.wiktionary.org/) via [kaikki.org](https://kaikki.org/) | CC BY-SA 4.0 |
+| English → Korean (Korean Wiktionary) | `en-ko-kowiktionary` | English entries in [Korean Wiktionary](https://ko.wiktionary.org/), defined in Korean, via [kaikki.org](https://kaikki.org/kowiktionary/) | CC BY-SA 4.0 |
 | English → Korean | `en-ko` | Korean translations in English Wiktionary | CC BY-SA 4.0 |
+| Korean (Basic Korean Dictionary) | `krdict` | [한국어기초사전](https://krdict.korean.go.kr/) (National Institute of Korean Language): Korean definitions with an English equivalent and definition per sense, plus reversed equivalents on English words. Text only: the site's recordings and images have per-file licenses and are not used | CC BY-SA 2.0 KR |
 | Korean → English | `ko-en` | Korean entries in English Wiktionary, plus reversed translations | CC BY-SA 4.0 |
 
 Also used on the word page:
@@ -72,11 +74,13 @@ and a lookup fetches only the chunks it needs.
 ```
 data/site/
   i/manifest.json          first key of each search chunk                      (1 file)
-  i/<n>.json               search index: headword + which dictionaries have it (586 chunks)
+  i/<n>.json               search index: headword + which dictionaries have it (610 chunks)
   d/wn/<shard>.json        WordNet entries                                     (256 chunks)
   d/en/<shard>.json        Wiktionary English entries                          (4,096 chunks)
   d/enko/<shard>.json      English → Korean translations                       (32 chunks)
   d/ko/<shard>.json        Korean entries + translation backlinks              (256 chunks)
+  d/kr/<shard>.json        한국어기초사전 entries + English equivalent backlinks  (512 chunks)
+  d/kwen/<shard>.json      Korean Wiktionary English entries                   (32 chunks)
   d/ex/<shard>.json        English–Korean sentence pairs (Tatoeba)             (64 chunks)
   d/<id>/x/<hash>.json     a single headword too large for a shared chunk      (60 files)
   version.txt              content hash of all the files above
@@ -117,7 +121,8 @@ the first items and a "show all" button. In the Korean UI, tags and parts of spe
 1:1 table (`app/lib/tags.ko.ts`); tags missing from it are shown as the source wrote them.
 
 Facts that are not dictionary entries are labeled as what they are: "given as a translation of *love*
-(English Wiktionary, sense: strong affection)" and Tatoeba sentence pairs (exact whole-word matches only).
+(English Wiktionary, sense: strong affection)", the same for 한국어기초사전's English equivalents, and Tatoeba
+sentence pairs (exact whole-word matches only).
 
 To add a dictionary: write a converter into the neutral format, add its id to `DICT`/`SHARDS` in
 `app/lib/keys.ts` and to `DICTIONARIES` in `app/lib/dicts.ts`. The renderer doesn't change.
@@ -151,4 +156,7 @@ To deploy manually: `npx wrangler login && pnpm run deploy`.
 
 ## License
 
-Code: MIT. Dictionary data: see the table above. The processed data is CC BY-SA 4.0.
+Code: MIT. Dictionary data: see the tables above. The processed data keeps the license of its source:
+the 한국어기초사전 part (`d/kr/`) is CC BY-SA 2.0 KR (© 국립국어원), the rest is CC BY-SA 4.0 (WordNet's CC BY 4.0
+and Tatoeba's CC BY 2.0 FR data are compatible with it). 한국어기초사전's recordings, images and videos are
+licensed per file and are not used; only its text is.

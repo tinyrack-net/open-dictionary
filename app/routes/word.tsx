@@ -15,6 +15,7 @@ import { addRecent } from "~/lib/history";
 import { posLabel, STRINGS, useT } from "~/lib/i18n";
 import { DICT, type DictId } from "~/lib/keys";
 import { DICTIONARIES, isLang, parseDicts, useSettings } from "~/lib/settings";
+import { LICENSE_URL } from "~/lib/dicts";
 import type { Backlink, DictEntry, Entry, SentencePair } from "~/lib/types";
 
 // /{lang}/word?word=<headword>&dicts=<slugs>&theme=<theme>
@@ -48,8 +49,7 @@ export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate 
 /** First gloss of the first selected source: the page description and the saved/recent list note. */
 function firstGloss(entry: Entry, dicts: DictId[]): string | undefined {
   for (const d of dicts) {
-    const list = d === "ko" ? entry.ko : entry[d];
-    const s = list?.[0]?.senses[0];
+    const s = sourceContent(entry, d).entries?.[0]?.senses[0];
     if (s) return s.translations?.length ? s.translations.map((tr) => tr.word).join(", ") : s.gloss;
   }
   return undefined;
@@ -69,13 +69,14 @@ export function meta({ loaderData: data, params }: Route.MetaArgs) {
  * spelling in their headword line.
  */
 function headingFor(entry: Entry, query: string): string {
-  const all = [entry.wn, entry.en, entry.enko, entry.ko].flatMap((list) => list ?? []);
+  const all = DICTIONARIES.flatMap((d) => sourceContent(entry, d.id).entries ?? []);
   return all.some((e) => e.word === query) ? query : entry.w;
 }
 
 /** What one source has for the headword. */
 function sourceContent(entry: Entry, id: DictId): { entries?: DictEntry[]; backlinks?: Backlink[] } {
   if (id === "ko") return { entries: entry.ko, backlinks: entry.koBacklinks };
+  if (id === "kr") return { entries: entry.kr, backlinks: entry.krBacklinks };
   return { entries: entry[id] };
 }
 
@@ -108,7 +109,8 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
   const sources = settings.dicts
     .map((id) => ({ id, ...sourceContent(entry, id) }))
     .filter((s) => s.entries?.length || s.backlinks?.length);
-  const pairs = settings.dicts.includes("enko") || settings.dicts.includes("ko") ? entry.pairs : undefined;
+  // bilingual example sentences go with any dictionary that pairs English and Korean
+  const pairs = settings.dicts.some((d) => d !== "wn" && d !== "en") ? entry.pairs : undefined;
   const available = DICTIONARIES.filter((d) => mask & DICT[d.id]);
   const korean = /[\uac00-\ud7af]/.test(entry.w);
   const heading = headingFor(entry, word);
@@ -139,7 +141,13 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
                 {t.dict[s.id]}
               </TRCard.Title>
               <TRText variant="caption" color="muted">
-                {d.source} · {d.license}
+                <TRLink variant="muted" href={d.url} underline="hover">
+                  {d.source}
+                </TRLink>{" "}
+                ·{" "}
+                <TRLink variant="muted" href={LICENSE_URL[d.license]} underline="hover">
+                  {d.license}
+                </TRLink>
               </TRText>
             </TRCard.Header>
             <TRCard.Content className="flex flex-col gap-tinyrack-xl">
