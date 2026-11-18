@@ -4,7 +4,7 @@ import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/root";
 import { NavigationProgress } from "./components/NavigationProgress";
-import { STRINGS } from "./lib/i18n";
+import { stringsFor } from "./lib/i18n";
 import { preloadScript } from "./lib/preload";
 import { registerServiceWorker } from "./lib/pwa";
 import { DEFAULT_LANG, isLang, THEME_SCRIPT, useApplyTheme } from "./lib/settings";
@@ -60,7 +60,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   useApplyTheme();
   const { lang } = useParams();
   const l = isLang(lang) ? lang : DEFAULT_LANG;
-  const t = STRINGS[l];
+  const t = stringsFor(l);
   let message = "Error";
   let details = String(error);
   if (isRouteErrorResponse(error)) {

@@ -3,11 +3,11 @@ import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/saved";
 import { WordList } from "~/components/WordList";
 import { useSaved } from "~/lib/history";
-import { STRINGS, useT } from "~/lib/i18n";
-import { isLang, useHydrated } from "~/lib/settings";
+import { stringsFor, useT } from "~/lib/i18n";
+import { useHydrated } from "~/lib/settings";
 
 export function meta({ params }: Route.MetaArgs) {
-  const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
+  const t = stringsFor(params.lang);
   return [{ title: `${t.savedWords} — ${t.siteName}` }, { name: "robots", content: "noindex" }];
 }
 

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { search } from "~/lib/data";
 import { useT } from "~/lib/i18n";
-import { DICT } from "~/lib/keys";
+import { headLanguages, maskHas } from "~/lib/dicts";
 import { DICTIONARIES, dictMask, useSettings } from "~/lib/settings";
 import type { IndexRow } from "~/lib/types";
 
@@ -18,7 +18,8 @@ export function SearchBox({ initial = "", large, autoFocus }: { initial?: string
   const t = useT();
   const navigate = useNavigate();
   const settings = useSettings();
-  const mask = dictMask(settings.dicts) || 0xff;
+  // an empty selection searches every dictionary, so the box still suggests words
+  const mask = dictMask(settings.dicts.length ? settings.dicts : DICTIONARIES.map((d) => d.id));
   const [query, setQuery] = useState(initial);
   const [rows, setRows] = useState<IndexRow[]>([]);
   const highlighted = useRef<IndexRow | undefined>(undefined);
@@ -68,7 +69,7 @@ export function SearchBox({ initial = "", large, autoFocus }: { initial?: string
         </TRAutocomplete.InputAdornment>
         <TRAutocomplete.Input
           aria-label={t.search}
-          placeholder={t.searchPlaceholder}
+          placeholder={t.searchPlaceholder(t.orList(headLanguages().map((l) => t.languages[l] ?? l)))}
           autoFocus={autoFocus}
           spellCheck={false}
           enterKeyHint="search"
@@ -94,7 +95,7 @@ export function SearchBox({ initial = "", large, autoFocus }: { initial?: string
                 <TRAutocomplete.Item key={row[0]} value={row} className="flex items-center justify-between gap-tinyrack-md">
                   <TRText truncate>{row[0]}</TRText>
                   <TRText as="span" className="flex shrink-0 gap-tinyrack-2xs">
-                    {DICTIONARIES.filter((d) => row[1] & DICT[d.id]).map((d) => (
+                    {DICTIONARIES.filter((d) => maskHas(row[1], d.id)).map((d) => (
                       <TRBadge key={d.id}>{d.short}</TRBadge>
                     ))}
                   </TRText>

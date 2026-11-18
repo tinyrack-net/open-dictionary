@@ -7,16 +7,25 @@ import type { Route } from "./+types/home";
 import { SearchBox } from "~/components/SearchBox";
 import { WordList } from "~/components/WordList";
 import { useRecent } from "~/lib/history";
-import { STRINGS, useT } from "~/lib/i18n";
-import { alternates } from "~/lib/seo";
-import { isLang, useSettings } from "~/lib/settings";
+import { DEFAULT_LANG, headLanguages, isLang, SAMPLE_WORDS, sourceCredits } from "~/lib/dicts";
+import { stringsFor, useT } from "~/lib/i18n";
+import { alternates, SITE_URL } from "~/lib/seo";
+import { useSettings } from "~/lib/settings";
 
 export function meta({ params }: Route.MetaArgs) {
-  const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
-  return [{ title: `${t.siteName} — ${t.tagline}` }, { name: "description", content: t.description }, ...alternates("")];
+  const t = stringsFor(params.lang);
+  const lang = isLang(params.lang) ? params.lang : DEFAULT_LANG;
+  // "English · Korean": the headword languages, in the UI language
+  const tagline = headLanguages()
+    .map((l) => t.languages[l] ?? l)
+    .join(" · ");
+  return [
+    { title: `${t.siteName} — ${tagline}` },
+    { name: "description", content: t.siteDescription(t.andList(sourceCredits())) },
+    { tagName: "link", rel: "canonical", href: `${SITE_URL}/${lang}` },
+    ...alternates(""),
+  ];
 }
-
-const SAMPLES = ["serendipity", "dictionary", "run", "사랑", "먹다", "사전"];
 
 /**
  * The search box, centered on the screen (the layout has no bar here), then the words you looked up
@@ -47,7 +56,7 @@ export default function Home() {
         </section>
       ) : (
         <TRText as="p" variant="bodySm" color="muted" align="center" className="flex flex-wrap justify-center gap-x-tinyrack-md gap-y-tinyrack-xs">
-          {SAMPLES.map((w) => (
+          {SAMPLE_WORDS.map((w) => (
             <TRLink key={w} variant="muted" render={<Link to={settings.wordHref(w)} />}>
               {w}
             </TRLink>

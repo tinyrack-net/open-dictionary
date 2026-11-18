@@ -6,16 +6,23 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { test } from "node:test";
 import zlib from "node:zlib";
-import { type ChunkId, entryKey, SHARDS, shardOf } from "./keys.ts";
-import { TAG_KO } from "./tags.ko.ts";
-import type { DictData, DictEntry } from "./types.ts";
+import { TAG_KO } from "../locales/tags.ko.ts";
+import { entryKey, shardOf } from "./keys.ts";
+import type { DictEntry, DictPart } from "./types.ts";
 
 const DATA = new URL("../../data/site/", import.meta.url);
 const RAW = new URL("../../raw/en.jsonl.gz", import.meta.url);
 const haveData = fs.existsSync(new URL("i/manifest.json", DATA)) && fs.existsSync(RAW);
 
-function part<D extends ChunkId>(id: D, word: string): DictData[D] | undefined {
+const SHARDS: Record<string, number> = fs.existsSync(new URL("i/manifest.json", DATA)) ? JSON.parse(fs.readFileSync(new URL("i/manifest.json", DATA), "utf8")).shards : {};
+
+/** A dictionary's entries for a headword in the built data. */
+const entries = (id: string, word: string): DictEntry[] | undefined => part(id, word)?.entries;
+
+/** What dictionary `id` has for a headword in the built data. */
+function part(id: string, word: string): DictPart | undefined {
   const key = entryKey(word);
+  if (!SHARDS[id]) return undefined;
   const file = new URL(`d/${id}/${shardOf(key, SHARDS[id])}.json`, DATA);
   if (!fs.existsSync(file)) return undefined;
   const v = JSON.parse(fs.readFileSync(file, "utf8"))[key];
@@ -50,7 +57,7 @@ test("raw entries load", { skip: !haveData }, async () => {
 
 test("one built entry per source entry, same order, same part of speech and etymology", { skip: !haveData }, () => {
   for (const w of WORDS) {
-    const built = part("en", w)!;
+    const built = entries("wiktionary", w)!;
     const src = RAW_ENTRIES.get(w)!;
     assert.deepEqual(
       built.map((e) => [e.pos, e.etym]),
@@ -66,7 +73,7 @@ test("one built entry per source entry, same order, same part of speech and etym
 });
 
 test("forms stay with their own entry and keep the source's tags (do: verb forms vs noun plurals)", { skip: !haveData }, () => {
-  const built = part("en", "do")!;
+  const built = entries("wiktionary", "do")!;
   const verb = built.find((e) => e.pos === "verb")!;
   const party = built.find((e) => e.pos === "noun" && e.etym === 1)!;
   // the source's headline forms, in order: inflections, then its listed alternatives (Northumbrian de, dee)
@@ -86,7 +93,7 @@ test("forms stay with their own entry and keep the source's tags (do: verb forms
 
 test("every sense is kept, in order, with its full gloss", { skip: !haveData }, () => {
   for (const w of WORDS) {
-    const built = part("en", w)!;
+    const built = entries("wiktionary", w)!;
     const src = RAW_ENTRIES.get(w)!;
     built.forEach((e: DictEntry, i) => {
       const glosses = src[i].senses.filter((s: any) => s.glosses?.length).map((s: any) => s.glosses.at(-1));
@@ -101,7 +108,7 @@ test("every sense is kept, in order, with its full gloss", { skip: !haveData }, 
 
 test("examples are complete (no truncation, no cap)", { skip: !haveData }, () => {
   for (const w of WORDS) {
-    const built = part("en", w)!;
+    const built = entries("wiktionary", w)!;
     const src = RAW_ENTRIES.get(w)!;
     built.forEach((e, i) => {
       const srcExamples = src[i].senses.filter((s: any) => s.glosses?.length).flatMap((s: any) => (s.examples ?? []).filter((x: any) => x.text).map((x: any) => x.text));
@@ -115,7 +122,7 @@ test("examples are complete (no truncation, no cap)", { skip: !haveData }, () =>
 });
 
 test("ran: the source's form-of senses are kept as written, nothing is guessed", { skip: !haveData }, () => {
-  const senses = part("en", "ran")!.flatMap((e) => e.senses);
+  const senses = entries("wiktionary", "ran")!.flatMap((e) => e.senses);
   const runSense = senses.find((s) => s.formOf?.includes("run"));
   assert.ok(runSense, "ran has a sense that is a form of run");
   assert.match(runSense!.gloss, /run/);
@@ -126,13 +133,9 @@ test("built data has no fields the format doesn't define (no summaries, ratings,
     entry: new Set(["word", "pos", "etym", "alt", "pron", "audio", "forms", "tables", "etymology", "notes", "senses", "relations"]),
     sense: new Set(["gloss", "glosses", "notes", "parent", "tags", "formOf", "examples", "translations", "relations"]),
   };
-  const of = (id: ChunkId, w: string): DictEntry[] => {
-    const v = part(id, w) as any;
-    return (Array.isArray(v) ? v : v?.entries) ?? [];
-  };
   for (const w of [...WORDS, "사랑", "먹다", "사과"])
-    for (const id of ["wn", "en", "enko", "ko", "kr", "kwen"] as const)
-      for (const e of of(id, w)) {
+    for (const id of Object.keys(SHARDS))
+      for (const e of part(id, w)?.entries ?? []) {
         for (const k of Object.keys(e)) assert.ok(allowed.entry.has(k), `${id} ${w}: entry.${k}`);
         for (const s of e.senses) for (const k of Object.keys(s)) assert.ok(allowed.sense.has(k), `${id} ${w}: sense.${k}`);
       }
@@ -178,7 +181,7 @@ test("krdict: one entry per source entry, in order, with every sense, definition
   const raw = rawKrdict(KR_WORDS);
   for (const w of KR_WORDS) {
     const src = raw.get(w)!;
-    const built = part("kr", w)?.entries ?? [];
+    const built = part("krdict", w)?.entries ?? [];
     assert.ok(src.length > 0, `${w}: in the source`);
     assert.equal(built.length, src.length, `${w}: entry count`);
     built.forEach((e, i) => {
@@ -210,7 +213,7 @@ test("krdict: one entry per source entry, in order, with every sense, definition
 });
 
 test("krdict: homographs keep their own number, hanja and part of speech (사과 沙果 / 謝過)", { skip: !haveKrdict }, () => {
-  const built = part("kr", "사과")!.entries!;
+  const built = part("krdict", "사과")!.entries!;
   assert.deepEqual(
     built.map((e) => [e.etym, e.alt, e.pos, e.senses[0].translations?.[0]?.word]),
     [
@@ -227,17 +230,17 @@ test("krdict: a dialogue example keeps every turn, in order", { skip: !haveKrdic
     .map((x) => feats(x.feat))
     .find((x) => x.type?.[0] === "대화");
   if (!dialogue) return;
-  const built = part("kr", "첨예하다")!.entries![0].senses.flatMap((s) => s.examples ?? []);
+  const built = part("krdict", "첨예하다")!.entries![0].senses.flatMap((s) => s.examples ?? []);
   assert.ok(built.some((x) => x.text === dialogue.example.map((t) => t.trim()).join("\n")));
 });
 
 test("krdict: English words list the Korean words that have them as an equivalent", { skip: !haveKrdict }, () => {
-  const apple = part("kr", "apple")?.backlinks ?? [];
+  const apple = part("krdict", "apple")?.backlinks ?? [];
   assert.ok(apple.some((b) => b.word === "사과" && b.lang === "ko"), "apple <- 사과");
-  const uncertainty = part("kr", "uncertainty")?.backlinks ?? [];
+  const uncertainty = part("krdict", "uncertainty")?.backlinks ?? [];
   assert.ok(uncertainty.some((b) => b.word === "불확실성"), "uncertainty <- 불확실성");
   // a backlink only exists when the source lists the word as an equivalent; it is never guessed
-  assert.ok(!part("kr", "apple")?.entries, "apple has no krdict entry of its own");
+  assert.ok(!part("krdict", "apple")?.entries, "apple has no krdict entry of its own");
 });
 
 // ---------------------------------------------------------------- Korean Wiktionary: English entries
@@ -253,7 +256,7 @@ test("kowiktionary: every English entry and sense is kept, in order, with its Ko
     if (o.lang_code === "en" && src.has(o.word) && o.senses?.some((s: any) => s.glosses?.length)) src.get(o.word)!.push(o);
   }
   for (const w of words) {
-    const built = part("kwen", w)!;
+    const built = entries("en-ko-kowiktionary", w)!;
     assert.deepEqual(
       built.map((e) => e.pos),
       src.get(w)!.map((o) => o.pos),
@@ -270,16 +273,16 @@ test("kowiktionary: every English entry and sense is kept, in order, with its Ko
 });
 
 test("krdict: escaped quotes in the source show as quotes (먹다: '-어 먹다'로 쓴다)", { skip: !haveKrdict }, () => {
-  const notes = part("kr", "먹다")!.entries!.flatMap((e) => e.senses.flatMap((s) => s.notes ?? []));
+  const notes = part("krdict", "먹다")!.entries!.flatMap((e) => e.senses.flatMap((s) => s.notes ?? []));
   assert.ok(notes.some((n) => n.includes("'-어 먹다'")), notes.join(" | "));
-  assert.ok(!JSON.stringify(part("kr", "먹다")).includes("&apos;"));
+  assert.ok(!JSON.stringify(part("krdict", "먹다")).includes("&apos;"));
 });
 
 test("krdict: only text is used; no recordings or other media files (they are licensed per file)", { skip: !haveKrdict }, () => {
   for (const w of [...KR_WORDS, "첨예하다"]) {
-    const json = JSON.stringify(part("kr", w));
+    const json = JSON.stringify(part("krdict", w));
     assert.ok(!json.includes("dicmedia.korean.go.kr"), w);
-    for (const e of part("kr", w)?.entries ?? []) assert.equal(e.audio, undefined, w);
+    for (const e of part("krdict", w)?.entries ?? []) assert.equal(e.audio, undefined, w);
   }
 });
 
@@ -296,7 +299,7 @@ test("simple wiktionary: every entry, sense, example and label is kept, in order
     if (o.lang_code === "en" && src.has(o.word) && o.senses?.some((s: any) => s.glosses?.length)) src.get(o.word)!.push(o);
   }
   for (const w of words) {
-    const built = part("simple", w)!;
+    const built = entries("simple-wiktionary", w)!;
     assert.deepEqual(
       built.map((e) => e.pos),
       src.get(w)!.map((o) => o.pos),
@@ -320,4 +323,18 @@ test("simple wiktionary: every entry, sense, example and label is kept, in order
       });
     });
   }
+});
+
+// ---------------------------------------------------------------- registry and data agree
+test("every registered dictionary has data, and every data directory is registered", { skip: !haveData }, async () => {
+  const { ALL_DICTS } = await import("./dicts.ts");
+  assert.deepEqual(Object.keys(SHARDS).sort(), [...ALL_DICTS].sort());
+});
+
+test("sentence pairs are stored per headword with the headword's side first", { skip: !haveData }, () => {
+  const love = part("tatoeba", "love")?.pairs ?? [];
+  assert.ok(love.length > 0);
+  for (const p of love) assert.equal(p.lang, "en");
+  const sarang = part("tatoeba", "사랑")?.pairs ?? [];
+  for (const p of sarang) assert.equal(p.lang, "ko");
 });

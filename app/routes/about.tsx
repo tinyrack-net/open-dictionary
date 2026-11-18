@@ -3,28 +3,21 @@ import { TRCard } from "@tinyrack/ui/components/card";
 import { TRLink } from "@tinyrack/ui/components/link";
 import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/about";
-import { STRINGS, useT } from "~/lib/i18n";
+import { DICTIONARIES, EXTRA_SOURCES, LICENSE_URL, localized } from "~/lib/dicts";
+import { stringsFor, useLang, useT } from "~/lib/i18n";
 import { alternates } from "~/lib/seo";
-import { LICENSE_URL } from "~/lib/dicts";
-import { isLang } from "~/lib/settings";
 
 export function meta({ params }: Route.MetaArgs) {
-  const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
+  const t = stringsFor(params.lang);
   return [{ title: `${t.sourcesLicenses} — ${t.siteName}` }, ...alternates("/about")];
 }
 
 export default function About() {
   const t = useT();
-  const sources: { name: string; url: string; license: string; licenseUrl?: string; use: string }[] = [
-    { name: "Simple English Wiktionary (kaikki.org)", url: "https://kaikki.org/simplewiktionary/English/", license: "CC BY-SA 4.0", use: t.aboutUse.simple },
-    { name: "Open English WordNet 2025", url: "https://en-word.net/", license: "CC BY 4.0", use: t.aboutUse.wn },
-    { name: "English Wiktionary (kaikki.org)", url: "https://kaikki.org/dictionary/English/", license: "CC BY-SA 4.0", use: t.aboutUse.en },
-    { name: "English Wiktionary: Korean (kaikki.org)", url: "https://kaikki.org/dictionary/Korean/", license: "CC BY-SA 4.0", use: t.aboutUse.ko },
-    { name: "한국어기초사전 © 국립국어원 (National Institute of Korean Language)", url: "https://krdict.korean.go.kr/", license: "CC BY-SA 2.0 KR", use: t.aboutUse.kr },
-    { name: "Korean Wiktionary: English (kaikki.org)", url: "https://kaikki.org/kowiktionary/", license: "CC BY-SA 4.0", use: t.aboutUse.kwen },
-    { name: "Tatoeba", url: "https://tatoeba.org/", license: "CC BY 2.0 FR", use: t.aboutUse.tatoeba },
-    { name: "wordfreq 3.1 (Robyn Speer)", url: "https://github.com/rspeer/wordfreq", license: "CC BY-SA 4.0", use: t.aboutUse.wordfreq },
-    { name: "Wikimedia Commons", url: "https://commons.wikimedia.org/", license: "CC BY-SA / CC BY / CC0", licenseUrl: "https://commons.wikimedia.org/wiki/Commons:Licensing", use: t.aboutUse.commons },
+  const lang = useLang();
+  const sources = [
+    ...DICTIONARIES.map((d) => ({ name: localized(d.name, lang), source: d.source.name, url: d.source.url, license: d.license, licenseUrl: undefined, use: localized(d.description, lang) })),
+    ...EXTRA_SOURCES.map((x) => ({ name: x.name, source: undefined, url: x.url, license: x.license, licenseUrl: x.licenseUrl, use: localized(x.description, lang) })),
   ];
   return (
     <article className="flex flex-col gap-tinyrack-lg py-tinyrack-2xl">
@@ -44,7 +37,12 @@ export default function About() {
               <TRBadge>{s.license}</TRBadge>
             </TRLink>
           </TRCard.Header>
-          <TRCard.Content>
+          <TRCard.Content className="flex flex-col gap-tinyrack-xs">
+            {s.source && (
+              <TRText as="p" variant="bodySm" color="muted">
+                {s.source}
+              </TRText>
+            )}
             <TRText as="p" color="muted">
               {s.use}
             </TRText>

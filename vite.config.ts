@@ -18,6 +18,15 @@ function dataVersion(): string {
   }
 }
 
+/** Chunk count per dictionary (i/manifest.json), so the app can name chunk files without waiting for it. */
+function dataShards(): Record<string, number> {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(DATA_ROOT, "i", "manifest.json"), "utf8")).shards ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function dictionaryData(version: string): Plugin {
   return {
     name: "dictionary-data",
@@ -47,7 +56,10 @@ export default defineConfig(() => {
   const version = dataVersion();
   return {
     plugins: [dictionaryData(version), tailwindcss(), reactRouter()],
-    define: { "import.meta.env.VITE_DATA_VERSION": JSON.stringify(version) },
+    define: {
+      "import.meta.env.VITE_DATA_VERSION": JSON.stringify(version),
+      "import.meta.env.VITE_DATA_SHARDS": JSON.stringify(JSON.stringify(dataShards())),
+    },
     resolve: {
       tsconfigPaths: true,
     },

@@ -1,5 +1,5 @@
 // The neutral dictionary format. Every source is converted into this one shape by its converter in
-// scripts/build-data.ts, and the word page renders it with one generic renderer.
+// scripts/sources/, and the word page renders it with one generic renderer.
 //
 // Rules for converters (see README "Data model"):
 //   - Copy, don't compose. Every field comes from the source. Nothing is invented, merged across
@@ -128,45 +128,33 @@ export interface Backlink {
   sense: string;
 }
 
-/** Example sentence pair from a parallel corpus, matched by an exact whole-word occurrence. */
+/**
+ * Example sentence pair from a parallel corpus, matched by an exact whole-word occurrence. `text` is
+ * the side that contains the headword; `translation` is the other side.
+ */
 export interface SentencePair {
-  en: string;
-  ko: string;
+  lang: string;
+  text: string;
+  translation: { lang: string; text: string };
 }
 
-/** What each data chunk stores per headword key. */
-export interface DictData {
-  /** Open English WordNet */
-  wn: DictEntry[];
-  /** English Wiktionary, English entries */
-  en: DictEntry[];
-  /** English Wiktionary, Korean translations of English entries (one entry per English entry) */
-  enko: DictEntry[];
-  /** English Wiktionary, Korean entries + backlinks from English entries' Korean translations */
-  ko: { entries?: DictEntry[]; backlinks?: Backlink[] };
-  /** 한국어기초사전: Korean entries + backlinks on English words given as a sense's English equivalent */
-  kr: { entries?: DictEntry[]; backlinks?: Backlink[] };
-  /** Korean Wiktionary, English entries defined in Korean */
-  kwen: DictEntry[];
-  /** Simple English Wiktionary, English entries */
-  simple: DictEntry[];
-  /** Tatoeba English–Korean pairs */
-  ex: SentencePair[];
+/**
+ * What one dictionary has for one headword; also the value stored per headword key in its data
+ * chunks (d/<dictionary id>/<shard>.json). Every dictionary uses this same shape.
+ */
+export interface DictPart {
+  /** the dictionary's own entries for the headword */
+  entries?: DictEntry[];
+  /** entries of the dictionary that point at this headword (e.g. "given as a translation of") */
+  backlinks?: Backlink[];
+  /** example sentence pairs (sentence corpora) */
+  pairs?: SentencePair[];
 }
 
-/** Everything loaded for one headword, per source, in the order the user selected the sources. */
+/** Everything loaded for one headword: per dictionary id, whatever that dictionary has. */
 export interface Entry {
   w: string;
-  wn?: DictEntry[];
-  en?: DictEntry[];
-  enko?: DictEntry[];
-  ko?: DictEntry[];
-  koBacklinks?: Backlink[];
-  kr?: DictEntry[];
-  krBacklinks?: Backlink[];
-  kwen?: DictEntry[];
-  simple?: DictEntry[];
-  pairs?: SentencePair[];
+  parts: Record<string, DictPart>;
 }
 
 /**

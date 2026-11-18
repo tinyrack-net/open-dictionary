@@ -2,7 +2,8 @@ import { TRIconButton } from "@tinyrack/ui/components/icon-button";
 import { TRMenu } from "@tinyrack/ui/components/menu";
 import { Check, Settings2 } from "lucide-react";
 import { useNavigate } from "react-router";
-import { LANG_NAMES, useT } from "~/lib/i18n";
+import { localized } from "~/lib/dicts";
+import { STRINGS, useT } from "~/lib/i18n";
 import { DICTIONARIES, LANGS, type Lang, THEMES, type Theme, useSettings } from "~/lib/settings";
 
 const Tick = () => <Check aria-hidden="true" size={14} />;
@@ -39,7 +40,7 @@ export function SettingsMenu() {
                   <TRMenu.CheckboxItemIndicator keepMounted>
                     <Tick />
                   </TRMenu.CheckboxItemIndicator>
-                  {t.dict[d.id]}
+                  {localized(d.name, settings.lang)}
                 </TRMenu.CheckboxItem>
               ))}
             </TRMenu.Group>
@@ -66,7 +67,7 @@ export function SettingsMenu() {
                     <TRMenu.RadioItemIndicator keepMounted>
                       <Tick />
                     </TRMenu.RadioItemIndicator>
-                    {LANG_NAMES[l]}
+                    {STRINGS[l].langName}
                   </TRMenu.RadioItem>
                 ))}
               </TRMenu.RadioGroup>

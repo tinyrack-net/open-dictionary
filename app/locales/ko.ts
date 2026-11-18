@@ -1,0 +1,62 @@
+// Korean UI strings. Source tags and parts of speech get Korean labels through the 1:1 table in
+// tags.ko.ts; anything missing from it is shown as the source wrote it.
+import type { Strings } from "./en.ts";
+import { POS_KO, TAG_KO } from "./tags.ko.ts";
+
+const ko: Strings = {
+  langName: "한국어",
+  siteName: "오픈 사전",
+  siteDescription: (sources: string) => `${sources}의 공개 데이터로 만든 무료 사전입니다.`,
+  searchPlaceholder: (langs: string) => `${langs} 검색…`,
+  orList: (items: string[]) => items.join(" 또는 "),
+  andList: (items: string[]) => items.join(", "),
+  search: "검색",
+  dictionaries: "사전",
+  etymology: "어원",
+  etymNumber: (n: number) => `어원 ${n}`,
+  forms: "변화형",
+  formTable: (kind: string) => `${({ conjugation: "활용", declension: "곡용", inflection: "굴절" } as Record<string, string>)[kind] ?? kind} 전체`,
+  relations: {
+    synonyms: "유의어",
+    antonyms: "반의어",
+    hypernyms: "상위어",
+    hyponyms: "하위어",
+    related: "관련어",
+    derived: "파생어",
+  },
+  backlinksTitle: "다음 단어의 번역어",
+  languages: { en: "영어", ko: "한국어" } as Record<string, string>,
+  pairsTitle: "예문",
+  notFound: "표제어를 찾을 수 없습니다.",
+  offline: "오프라인 상태입니다. 전에 열어 본 단어는 볼 수 있지만, 이 단어는 인터넷 연결이 필요합니다.",
+  didYouMean: "혹시 이 단어인가요",
+  onlyIn: (names: string) => `이 단어는 다음 사전에만 있습니다: ${names}. 설정에서 켜 주세요.`,
+  noneSelected: "선택한 사전이 없습니다. 설정에서 하나 이상 선택해 주세요.",
+  showAll: (n: number) => `${n}개 모두 보기`,
+  play: (label: string) => `발음 듣기 (${label})`,
+  playGeneric: "발음 듣기",
+  save: "단어 저장",
+  savedWords: "저장한 단어",
+  recent: "최근 본 단어",
+  removeItem: (w: string) => `${w} 삭제`,
+  clearAll: "모두 지우기",
+  nothingSaved: "아직 저장한 단어가 없습니다. 단어 페이지에서 책갈피를 눌러 저장하세요.",
+  storedOnDevice: "이 기기에만 저장됩니다.",
+  sourcesLicenses: "출처 및 라이선스",
+  aboutIntro:
+    "이 사이트의 모든 뜻풀이는 공개 라이선스 데이터에서 가져와 출처에 적힌 그대로 보여 줍니다. 사전마다 가공한 데이터는 그 사전의 라이선스로 재배포하며, 라이선스는 아래와 단어 페이지마다 표시합니다.",
+  pageNotFound: "요청한 페이지를 찾을 수 없습니다.",
+  backToSearch: "검색으로 돌아가기",
+  language: "언어",
+  settings: "설정",
+  theme: "테마",
+  themes: { auto: "시스템", light: "라이트", dark: "다크" },
+  pronunciation: "발음",
+  searchResults: "추천 단어",
+  clear: "지우기",
+  loading: "불러오는 중…",
+  tags: TAG_KO,
+  pos: POS_KO,
+};
+
+export default ko;

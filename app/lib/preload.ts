@@ -5,30 +5,26 @@
 // The script reads ?word= and ?dicts= and requests the same files data.ts would (lookupPaths),
 // storing the promises on window.__odPreload for readJson to reuse. It is plain JavaScript because
 // it runs before any bundle; preload.test.ts checks it against lookupPaths for many words, so a
-// change to hashing, shard counts or dictionary slugs that isn't mirrored here fails the tests.
-import { dataUrl } from "./dataVersion.ts";
-import { SHARDS } from "./keys.ts";
-import { DICTIONARIES, ENGLISH_ONLY } from "./dicts.ts";
+// change to hashing or the dictionary list that isn't mirrored here fails the tests.
+import { DATA_SHARDS, dataUrl } from "./dataVersion.ts";
+import { ALL_DICTS } from "./dicts.ts";
 
-export function preloadScript(): string {
-  const slugs = Object.fromEntries(DICTIONARIES.map((d) => [d.slug, d.id]));
-  const all = DICTIONARIES.map((d) => d.id);
+export function preloadScript(shards: Record<string, number> = DATA_SHARDS): string {
+  const all = ALL_DICTS;
   return `(function () {
   try {
     if (!/\\/word$/.test(location.pathname)) return;
     var q = new URLSearchParams(location.search);
     var word = (q.get("word") || "").normalize("NFC").trim().toLowerCase();
     if (!word) return;
-    var SHARDS = ${JSON.stringify(SHARDS)}, ENGLISH_ONLY = ${JSON.stringify(ENGLISH_ONLY)}, SLUGS = ${JSON.stringify(slugs)}, ALL = ${JSON.stringify(all)}, BASE = ${JSON.stringify(dataUrl(""))};
+    var SHARDS = ${JSON.stringify(shards)}, ALL = ${JSON.stringify(all)}, BASE = ${JSON.stringify(dataUrl(""))};
     var d = q.get("dicts"), dicts = ALL;
-    if (d !== null) { dicts = []; d.split(",").forEach(function (s) { var id = SLUGS[s.trim()]; if (id && dicts.indexOf(id) < 0) dicts.push(id); }); }
+    if (d !== null) { dicts = []; d.split(",").forEach(function (s) { var id = s.trim(); if (ALL.indexOf(id) >= 0 && dicts.indexOf(id) < 0) dicts.push(id); }); }
     var h = 0x811c9dc5;
     for (var i = 0; i < word.length; i++) { h ^= word.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     h = h >>> 0;
     function shard(n) { var w = Math.max(1, (n - 1).toString(16).length), s = (h % n).toString(16); while (s.length < w) s = "0" + s; return s; }
-    var ids = dicts.slice();
-    if (dicts.some(function (id) { return ENGLISH_ONLY.indexOf(id) < 0; })) ids.push("ex");
-    var paths = ["i/manifest.json"].concat(ids.map(function (id) { return "d/" + id + "/" + shard(SHARDS[id]) + ".json"; }));
+    var paths = ["i/manifest.json"].concat(dicts.filter(function (id) { return SHARDS[id]; }).map(function (id) { return "d/" + id + "/" + shard(SHARDS[id]) + ".json"; }));
     var out = (window.__odPreload = {});
     // A request cancelled by leaving the page (reload, back) rejects; nothing may be waiting on it
     // yet, so mark it handled here (readJson still sees the rejection and treats it as a miss).

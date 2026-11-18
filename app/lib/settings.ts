@@ -16,17 +16,21 @@ import {
 } from "@tinyrack/ui/providers/color-scheme";
 import { useEffect, useSyncExternalStore } from "react";
 import { type Location, useLocation, useNavigate, useNavigation, useParams } from "react-router";
-import { ALL_DICTS, DEFAULT_LANG, isLang, type Lang, parseDicts, slugOf } from "./dicts.ts";
-import type { DictId } from "./keys.ts";
+import { ALL_DICTS, DEFAULT_LANG, type DictId, isLang, LANGS, type Lang, parseDicts } from "./dicts.ts";
 
 export { ALL_DICTS, DEFAULT_LANG, DICTIONARIES, dictMask, isLang, LANGS, type Lang, parseDicts } from "./dicts.ts";
 
 // ---------------------------------------------------------------- UI language
 
-/** Browser language, used only to pick a UI language for "/". */
+/** The first browser language the UI has, used only to pick a UI language for "/". */
 export function browserLang(): Lang {
   const langs = typeof navigator !== "undefined" ? (navigator.languages ?? [navigator.language]) : [];
-  return langs.some((l) => l?.toLowerCase().startsWith("ko")) ? "ko" : DEFAULT_LANG;
+  for (const l of langs) {
+    const base = l?.toLowerCase().split("-")[0];
+    const hit = LANGS.find((x) => x === base);
+    if (hit) return hit;
+  }
+  return DEFAULT_LANG;
 }
 
 // ---------------------------------------------------------------- theme
@@ -75,7 +79,7 @@ export interface Settings {
 function settingParams(s: Pick<Settings, "dicts" | "theme">): [string, string][] {
   const out: [string, string][] = [];
   // omitted only when it is exactly the default: every dictionary, in the default order
-  if (s.dicts.join() !== ALL_DICTS.join()) out.push(["dicts", s.dicts.map((d) => slugOf.get(d)).join(",")]);
+  if (s.dicts.join() !== ALL_DICTS.join()) out.push(["dicts", s.dicts.join(",")]);
   if (s.theme !== "auto") out.push(["theme", s.theme]);
   return out;
 }

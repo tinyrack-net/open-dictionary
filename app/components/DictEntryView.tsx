@@ -214,7 +214,7 @@ function OtherGlosses({ glosses }: { glosses?: GlossText[] }) {
     <>
       {glosses.map((g, i) => (
         <TRText as="p" key={i} variant="bodySm" color="muted" lang={g.lang}>
-          <TRBadge className="mr-tinyrack-xs align-middle">{t.langName[g.lang] ?? g.lang}</TRBadge>
+          <TRBadge className="mr-tinyrack-xs align-middle">{t.languages[g.lang] ?? g.lang}</TRBadge>
           {g.text}
         </TRText>
       ))}

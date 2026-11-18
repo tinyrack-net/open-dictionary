@@ -12,18 +12,18 @@ import { useDelayed } from "~/components/NavigationProgress";
 import { SaveButton } from "~/components/SaveButton";
 import { getEntry, search, setLoadingUrl } from "~/lib/data";
 import { addRecent } from "~/lib/history";
-import { posLabel, STRINGS, useT } from "~/lib/i18n";
-import { DICT, type DictId } from "~/lib/keys";
-import { DICTIONARIES, isLang, parseDicts, useHydrated, useSettings } from "~/lib/settings";
-import { LICENSE_URL, wantsPairs } from "~/lib/dicts";
-import type { Backlink, DictEntry, Entry, SentencePair } from "~/lib/types";
+import { posLabel, stringsFor, useT } from "~/lib/i18n";
+import { type Dictionary, type DictId, headwordLang, LICENSE_URL, localized, maskHas } from "~/lib/dicts";
+import { DICTIONARIES, parseDicts, useHydrated, useSettings } from "~/lib/settings";
+import type { Backlink, Entry, SentencePair } from "~/lib/types";
 
-// /{lang}/word?word=<headword>&dicts=<slugs>&theme=<theme>
+// /{lang}/word?word=<headword>&dicts=<dictionary ids>&theme=<theme>
 // One prerendered shell per UI language; the entry is loaded in the browser, fetching only the
 // chunks of the selected dictionaries (see app/lib/data.ts).
 //
-// The page renders each selected source as it is, one card per source in the order of ?dicts=,
-// using the same generic renderer for all of them (components/DictEntryView.tsx).
+// The page renders each selected dictionary as it is, one card per dictionary in the order of ?dicts=,
+// using the same generic renderer for all of them (components/DictEntryView.tsx). Nothing here names
+// a dictionary: cards come from the registry (app/lib/dicts.ts) and the loaded parts.
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   setLoadingUrl(request.url);
   const params = new URL(request.url).searchParams;
@@ -46,17 +46,17 @@ export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate 
   return parseDicts(nextUrl.searchParams.get("dicts")).some((d) => !before.includes(d));
 }
 
-/** First gloss of the first selected source: the page description and the saved/recent list note. */
+/** First gloss of the first selected dictionary: the page description and the saved/recent list note. */
 function firstGloss(entry: Entry, dicts: DictId[]): string | undefined {
   for (const d of dicts) {
-    const s = sourceContent(entry, d).entries?.[0]?.senses[0];
+    const s = entry.parts[d]?.entries?.[0]?.senses[0];
     if (s) return s.translations?.length ? s.translations.map((tr) => tr.word).join(", ") : s.gloss;
   }
   return undefined;
 }
 
 export function meta({ loaderData: data, params }: Route.MetaArgs) {
-  const t = STRINGS[isLang(params.lang) ? params.lang : "en"];
+  const t = stringsFor(params.lang);
   const e = data?.loaded?.entry;
   const w = e?.w ?? data?.word;
   const gloss = e && firstGloss(e, DICTIONARIES.map((d) => d.id));
@@ -69,15 +69,8 @@ export function meta({ loaderData: data, params }: Route.MetaArgs) {
  * spelling in their headword line.
  */
 function headingFor(entry: Entry, query: string): string {
-  const all = DICTIONARIES.flatMap((d) => sourceContent(entry, d.id).entries ?? []);
+  const all = Object.values(entry.parts).flatMap((p) => p.entries ?? []);
   return all.some((e) => e.word === query) ? query : entry.w;
-}
-
-/** What one source has for the headword. */
-function sourceContent(entry: Entry, id: DictId): { entries?: DictEntry[]; backlinks?: Backlink[] } {
-  if (id === "ko") return { entries: entry.ko, backlinks: entry.koBacklinks };
-  if (id === "kr") return { entries: entry.kr, backlinks: entry.krBacklinks };
-  return { entries: entry[id] };
 }
 
 /**
@@ -106,60 +99,63 @@ export default function WordPage({ loaderData }: Route.ComponentProps) {
   if (!loaded) return <NotFound word={word} suggestions={suggestions} />;
   const { entry, mask } = loaded;
 
-  const sources = settings.dicts
-    .map((id) => ({ id, ...sourceContent(entry, id) }))
-    .filter((s) => s.entries?.length || s.backlinks?.length);
-  // bilingual example sentences go with any dictionary that pairs English and Korean
-  const pairs = wantsPairs(settings.dicts) ? entry.pairs : undefined;
-  const available = DICTIONARIES.filter((d) => mask & DICT[d.id]);
-  const korean = /[\uac00-\ud7af]/.test(entry.w);
+  // one card per selected dictionary that has something for the word, in the URL's order
+  const cards = settings.dicts
+    .map((id) => ({ d: DICTIONARIES.find((x) => x.id === id)!, part: entry.parts[id] }))
+    .filter(({ part }) => part?.entries?.length || part?.backlinks?.length || part?.pairs?.length);
+  const available = DICTIONARIES.filter((d) => maskHas(mask, d.id));
+  const lang = headwordLang(entry.parts);
   const heading = headingFor(entry, word);
 
   return (
     <article className="mx-auto flex max-w-tinyrack-mdx-content-width flex-col gap-tinyrack-xl py-tinyrack-xl sm:py-tinyrack-2xl">
       <header className="flex items-start justify-between gap-tinyrack-md">
-        <TRText as="h1" variant="display" lang={korean ? "ko" : "en"} className="min-w-0 break-words">
+        <TRText as="h1" variant="display" lang={lang} className="min-w-0 break-words">
           {heading}
         </TRText>
         <SaveButton word={heading} gloss={gloss} />
       </header>
 
-      {sources.length === 0 && !pairs?.length && (
+      {cards.length === 0 && (
         <TRAlert.Root variant="info">
           <TRAlert.Description>
-            {settings.dicts.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => t.dict[d.id]).join(", "))}
+            {settings.dicts.length === 0 ? t.noneSelected : t.onlyIn(available.map((d) => localized(d.name, settings.lang)).join(", "))}
           </TRAlert.Description>
         </TRAlert.Root>
       )}
 
-      {sources.map((s) => {
-        const d = DICTIONARIES.find((x) => x.id === s.id)!;
-        return (
-          <TRCard.Root key={s.id} variant="outlined" padding="lg" render={<section aria-labelledby={`src-${s.id}`} />}>
-            <TRCard.Header className="flex flex-wrap items-baseline justify-between gap-tinyrack-sm">
-              <TRCard.Title id={`src-${s.id}`} render={<TRText as="h2" variant="headingSm" />}>
-                {t.dict[s.id]}
-              </TRCard.Title>
-              <TRText variant="caption" color="muted">
-                <TRLink variant="muted" href={d.url} underline="hover">
-                  {d.source}
-                </TRLink>{" "}
-                ·{" "}
-                <TRLink variant="muted" href={LICENSE_URL[d.license]} underline="hover">
-                  {d.license}
-                </TRLink>
-              </TRText>
-            </TRCard.Header>
-            <TRCard.Content className="flex flex-col gap-tinyrack-xl">
-              {s.entries?.length ? <DictEntries entries={s.entries} heading={heading} /> : null}
-              {s.backlinks?.length ? <Backlinks items={s.backlinks} /> : null}
-            </TRCard.Content>
-          </TRCard.Root>
-        );
-      })}
-
-      {pairs?.length ? <Pairs pairs={pairs} korean={korean} /> : null}
+      {cards.map(({ d, part }) => (
+        <SourceCard key={d.id} d={d}>
+          {part.entries?.length ? <DictEntries entries={part.entries} heading={heading} /> : null}
+          {part.backlinks?.length ? <Backlinks items={part.backlinks} /> : null}
+          {part.pairs?.length ? <Pairs pairs={part.pairs} /> : null}
+        </SourceCard>
+      ))}
     </article>
+  );
+}
+
+/** One dictionary's card: its name, and its source and license, both linked (attribution). */
+function SourceCard({ d, children }: { d: Dictionary; children: React.ReactNode }) {
+  const settings = useSettings();
+  return (
+    <TRCard.Root variant="outlined" padding="lg" render={<section aria-labelledby={`src-${d.id}`} />}>
+      <TRCard.Header className="flex flex-wrap items-baseline justify-between gap-tinyrack-sm">
+        <TRCard.Title id={`src-${d.id}`} render={<TRText as="h2" variant="headingSm" />}>
+          {localized(d.name, settings.lang)}
+        </TRCard.Title>
+        <TRText variant="caption" color="muted">
+          <TRLink variant="muted" href={d.source.url} underline="hover">
+            {d.source.name}
+          </TRLink>{" "}
+          ·{" "}
+          <TRLink variant="muted" href={LICENSE_URL[d.license]} underline="hover">
+            {d.license}
+          </TRLink>
+        </TRText>
+      </TRCard.Header>
+      <TRCard.Content className="flex flex-col gap-tinyrack-xl">{children}</TRCard.Content>
+    </TRCard.Root>
   );
 }
 
@@ -197,34 +193,23 @@ function Backlinks({ items }: { items: Backlink[] }) {
   );
 }
 
-/** Tatoeba sentence pairs that contain the headword exactly. Shown in the headword's language first. */
-function Pairs({ pairs, korean }: { pairs: SentencePair[]; korean: boolean }) {
-  const t = useT();
+/** Sentence pairs that contain the headword exactly: the sentence, then its translation. */
+function Pairs({ pairs }: { pairs: SentencePair[] }) {
   return (
-    <TRCard.Root variant="outlined" padding="lg" render={<section aria-labelledby="src-ex" />}>
-      <TRCard.Header className="flex flex-wrap items-baseline justify-between gap-tinyrack-sm">
-        <TRCard.Title id="src-ex" render={<TRText as="h2" variant="headingSm" />}>
-          {t.pairsTitle}
-        </TRCard.Title>
-        <TRText variant="caption" color="muted">
-          Tatoeba · CC BY 2.0 FR
-        </TRText>
-      </TRCard.Header>
-      <TRCard.Content className="flex flex-col gap-tinyrack-sm">
-        <Collapsed items={pairs} limit={5}>
-          {(shown) =>
-            shown.map((p, i) => (
-              <TRText as="span" key={i} className="flex flex-col">
-                <TRText lang={korean ? "ko" : "en"}>{korean ? p.ko : p.en}</TRText>
-                <TRText variant="bodySm" color="muted" lang={korean ? "en" : "ko"}>
-                  {korean ? p.en : p.ko}
-                </TRText>
+    <TRText as="span" className="flex flex-col gap-tinyrack-sm">
+      <Collapsed items={pairs} limit={5}>
+        {(shown) =>
+          shown.map((p, i) => (
+            <TRText as="span" key={i} className="flex flex-col">
+              <TRText lang={p.lang}>{p.text}</TRText>
+              <TRText variant="bodySm" color="muted" lang={p.translation.lang}>
+                {p.translation.text}
               </TRText>
-            ))
-          }
-        </Collapsed>
-      </TRCard.Content>
-    </TRCard.Root>
+            </TRText>
+          ))
+        }
+      </Collapsed>
+    </TRText>
   );
 }
 

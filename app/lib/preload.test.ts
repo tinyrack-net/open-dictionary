@@ -3,6 +3,9 @@ import { test } from "node:test";
 import { lookupPaths } from "./data.ts";
 import { preloadScript } from "./preload.ts";
 import { ALL_DICTS, parseDicts } from "./dicts.ts";
+
+/** A data build's chunk counts (the real ones are baked in by Vite; tests use a fixed set). */
+const SHARDS = Object.fromEntries(ALL_DICTS.map((id, i) => [id, [32, 256, 4096, 64][i % 4]]));
 import { dataUrl } from "./dataVersion.ts";
 
 /** Runs the inline script against a fake window and returns the paths it requested. */
@@ -16,14 +19,14 @@ function run(url: string, manifest = { chunk: 1, first: [""] }) {
     const res = { ok: true, json: async () => body, clone: () => res, path: p };
     return res;
   };
-  const fn = new Function("location", "window", "fetch", "URLSearchParams", preloadScript());
+  const fn = new Function("location", "window", "fetch", "URLSearchParams", preloadScript(SHARDS));
   fn(u, win, fakeFetch, URLSearchParams);
   return win;
 }
 const requested = (url: string) => Object.keys(run(url).__odPreload ?? {});
 
 const WORDS = ["love", "Run", "give up", "café", "사랑", "먹다", "  water ", "ÉCOLE", "n'importe", "x"];
-const DICTS = [null, "wordnet", "en-ko,ko-en", "wiktionary,en-ko", "", "bogus,ko-en", "ko-en,wordnet,ko-en"];
+const DICTS = [null, "wordnet", "en-ko,ko-en", "wiktionary,en-ko", "", "bogus,ko-en", "ko-en,wordnet,ko-en", "krdict,tatoeba"];
 
 test("preload script requests exactly what getEntry will read", () => {
   for (const word of WORDS)
@@ -31,7 +34,7 @@ test("preload script requests exactly what getEntry will read", () => {
       const qs = new URLSearchParams({ word, ...(dicts === null ? {} : { dicts }) });
       assert.deepEqual(
         requested(`/en/word?${qs}`),
-        lookupPaths(word, parseDicts(dicts)),
+        lookupPaths(word, parseDicts(dicts), SHARDS),
         `${word} / ${dicts}`,
       );
     }
@@ -54,8 +57,8 @@ test("preload script also requests the index chunk once the manifest arrives", a
 });
 
 test("selected dictionaries keep the URL's order (the page shows them in that order)", () => {
-  assert.deepEqual(parseDicts("wiktionary,wordnet"), ["en", "wn"]);
-  assert.deepEqual(parseDicts("ko-en,bogus,ko-en,en-ko"), ["ko", "enko"]);
+  assert.deepEqual(parseDicts("wiktionary,wordnet"), ["wiktionary", "wordnet"]);
+  assert.deepEqual(parseDicts("ko-en,bogus,ko-en,en-ko"), ["ko-en", "en-ko"]);
   assert.deepEqual(parseDicts(null), ALL_DICTS);
 });
 
@@ -67,5 +70,5 @@ test("preload fetches the same versioned URLs as data.ts", () => {
 });
 
 test("every dictionary is covered", () => {
-  assert.equal(lookupPaths("love", ALL_DICTS).length, 1 + ALL_DICTS.length + 1);
+  assert.equal(lookupPaths("love", ALL_DICTS, SHARDS).length, 1 + ALL_DICTS.length);
 });
