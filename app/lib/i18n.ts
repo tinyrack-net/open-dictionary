@@ -73,6 +73,7 @@ const en = {
   pronunciation: "Pronunciation",
   searchResults: "Suggestions",
   clear: "Clear",
+  loading: "Loading…",
   /** source tag -> UI label (English UI: verbatim) */
   tags: {} as Record<string, string>,
   /** source part of speech -> UI label (English UI: verbatim) */
@@ -143,6 +144,7 @@ const ko: typeof en = {
   pronunciation: "발음",
   searchResults: "추천 단어",
   clear: "지우기",
+  loading: "불러오는 중…",
   tags: TAG_KO,
   pos: POS_KO,
 };

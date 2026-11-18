@@ -5,9 +5,10 @@ import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRSkeleton } from "@tinyrack/ui/components/skeleton";
 import { TRText } from "@tinyrack/ui/components/text";
 import { useEffect } from "react";
-import { Link, type ShouldRevalidateFunctionArgs } from "react-router";
+import { Link, type ShouldRevalidateFunctionArgs, useLocation, useNavigation } from "react-router";
 import type { Route } from "./+types/word";
 import { Collapsed, DictEntries } from "~/components/DictEntryView";
+import { useDelayed } from "~/components/NavigationProgress";
 import { SaveButton } from "~/components/SaveButton";
 import { getEntry, search, setLoadingUrl } from "~/lib/data";
 import { addRecent } from "~/lib/history";
@@ -78,16 +79,29 @@ function sourceContent(entry: Entry, id: DictId): { entries?: DictEntry[]; backl
   return { entries: entry[id] };
 }
 
+/**
+ * True while another word is loading for long enough to notice. The page then shows the skeleton
+ * instead of the previous word; quick loads and dictionary toggles keep the current content.
+ */
+function useLoadingOtherWord(word: string) {
+  const pending = useNavigation().location;
+  const { pathname } = useLocation();
+  const other = !!pending && pending.pathname === pathname && (new URLSearchParams(pending.search).get("word")?.trim() ?? "") !== word;
+  return useDelayed(other, 300);
+}
+
 export default function WordPage({ loaderData }: Route.ComponentProps) {
   const { loaded, word, suggestions } = loaderData;
   const settings = useSettings();
   const t = useT();
   const gloss = loaded ? firstGloss(loaded.entry, settings.dicts) : undefined;
+  const loadingOther = useLoadingOtherWord(word);
 
   useEffect(() => {
     if (loaded) addRecent(headingFor(loaded.entry, word), gloss);
   }, [loaded?.entry.w, word]);
 
+  if (loadingOther) return <WordSkeleton />;
   if (!loaded) return <NotFound word={word} suggestions={suggestions} />;
   const { entry, mask } = loaded;
 
@@ -233,11 +247,41 @@ function NotFound({ word, suggestions }: { word: string; suggestions: string[] }
   );
 }
 
+/** Gloss line widths of the placeholder rows, so they read as text rather than as bars. */
+const SKELETON_ROWS = ["w-tinyrack-overlay-width-md", "w-tinyrack-measure-xl", "w-tinyrack-overlay-width-sm", "w-tinyrack-measure-lg"];
+
+/**
+ * Placeholder in the shape of a word page (heading, one source card with a part of speech, a
+ * pronunciation and numbered sense rows) while the entry loads, so the content doesn't jump in.
+ */
 function WordSkeleton() {
+  const t = useT();
   return (
-    <article className="mx-auto flex max-w-tinyrack-mdx-content-width flex-col gap-tinyrack-xl py-tinyrack-2xl" aria-busy="true">
-      <TRSkeleton shape="text" className="w-tinyrack-measure-lg" />
-      <TRSkeleton shape="rectangle" className="h-tinyrack-measure-md w-full" />
+    <article
+      className="mx-auto flex max-w-tinyrack-mdx-content-width flex-col gap-tinyrack-xl py-tinyrack-xl sm:py-tinyrack-2xl"
+      role="status"
+      aria-busy="true"
+      aria-label={t.loading}
+    >
+      <TRSkeleton className="h-tinyrack-3xl w-tinyrack-measure-md" />
+      <TRCard.Root variant="outlined" padding="lg">
+        <TRCard.Header className="flex items-baseline justify-between gap-tinyrack-sm">
+          <TRSkeleton className="w-tinyrack-measure-md" />
+          <TRSkeleton className="w-tinyrack-measure-sm max-sm:hidden" />
+        </TRCard.Header>
+        <TRCard.Content className="flex flex-col gap-tinyrack-sm">
+          <TRSkeleton className="w-tinyrack-measure-xs" />
+          <TRSkeleton className="w-tinyrack-measure-sm" />
+          <TRText as="span" className="flex flex-col divide-y-tinyrack-default divide-tinyrack-border">
+            {SKELETON_ROWS.map((w, i) => (
+              <TRText as="span" key={i} className="flex flex-col gap-tinyrack-xs py-tinyrack-sm pl-tinyrack-xl">
+                <TRSkeleton className={`${w} max-w-full`} />
+                <TRSkeleton className="w-tinyrack-measure-md max-w-full" />
+              </TRText>
+            ))}
+          </TRText>
+        </TRCard.Content>
+      </TRCard.Root>
     </article>
   );
 }

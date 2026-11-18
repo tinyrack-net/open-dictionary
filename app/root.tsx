@@ -2,6 +2,7 @@ import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration, 
 import { TRLinkButton } from "@tinyrack/ui/components/link-button";
 import { TRText } from "@tinyrack/ui/components/text";
 import type { Route } from "./+types/root";
+import { NavigationProgress } from "./components/NavigationProgress";
 import { STRINGS } from "./lib/i18n";
 import { preloadScript } from "./lib/preload";
 import { DEFAULT_LANG, isLang, THEME_SCRIPT, useApplyTheme } from "./lib/settings";
@@ -36,7 +37,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useApplyTheme();
-  return <Outlet />;
+  return (
+    <>
+      <NavigationProgress />
+      <Outlet />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

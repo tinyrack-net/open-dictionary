@@ -23,6 +23,7 @@
 @import "@tinyrack/ui/components/link.css";
 @import "@tinyrack/ui/components/link-button.css";
 @import "@tinyrack/ui/components/menu.css";
+@import "@tinyrack/ui/components/progress.css";
 @import "@tinyrack/ui/components/separator.css";
 @import "@tinyrack/ui/components/skeleton.css";
 @import "@tinyrack/ui/components/text.css";
@@ -39,6 +40,14 @@
   @variant sm {
     padding-inline: var(--tinyrack-space-xl);
   }
+}
+
+/* Top-of-window navigation bar (components/NavigationProgress.tsx): thin, edge to edge, no track. */
+@utility nav-progress {
+  --tr-progress-height: var(--tinyrack-space-xs);
+  --tr-progress-background: transparent;
+  --tr-progress-fill: var(--tinyrack-primary);
+  --tr-progress-radius: 0;
 }
 
 /* Long text (definitions, examples) reads best at a limited line length. */
