@@ -28,7 +28,7 @@ export interface Dictionary {
   kind: "dictionary" | "sentences";
   /** Language of the headwords (BCP 47). */
   headLang: string;
-  /** Language the definitions are written in ("" for sentences: every other language of the site). */
+  /** Language the definitions are written in; for sentences, the language of the translations. */
   glossLang: string;
   /** The source's name, without the languages (shown next to the language pair: "English–Korean · Wiktionary"). */
   name: Localized;
@@ -46,6 +46,16 @@ export interface Dictionary {
   /** Search ranking: how much a headword in this dictionary is preferred (0 = none). */
   searchBoost?: number;
 }
+
+/** Tatoeba sentence dictionaries: [sentence language, translation language], in display order. */
+const TATOEBA_PAIRS: [string, string][] = [
+  ["en", "ko"],
+  ["en", "ja"],
+  ["ko", "en"],
+  ["ko", "ja"],
+  ["ja", "en"],
+  ["ja", "ko"],
+];
 
 const WIKT_EN = { name: "English Wiktionary · kaikki.org", url: "https://kaikki.org/dictionary/", credit: "Wiktionary" };
 const WIKT_KO = { name: "한국어 위키낱말사전 · kaikki.org", url: "https://kaikki.org/kowiktionary/", credit: "Wiktionary" };
@@ -207,21 +217,23 @@ export const DICTIONARIES: Dictionary[] = [
     license: "CC BY-SA 4.0",
     searchBoost: 5,
   },
-  // ---- sentences
-  {
-    id: "tatoeba",
-    kind: "sentences",
-    headLang: "",
-    glossLang: "",
-    name: { en: "Tatoeba" },
-    description: {
-      en: "Example sentences in English, Korean and Japanese with their translations, shown under the words they contain exactly.",
-      ko: "영어·한국어·일본어 예문과 그 번역. 단어가 정확히 들어 있는 문장만 보여 줍니다.",
-      ja: "英語・韓国語・日本語の例文とその翻訳。単語をそのまま含む文だけを表示します。",
-    },
-    source: { name: "Tatoeba", url: "https://tatoeba.org/", credit: "Tatoeba" },
-    license: "CC BY 2.0 FR",
-  },
+  // ---- sentences: one dictionary per language pair (sentences in `headLang`, translations in `glossLang`)
+  ...TATOEBA_PAIRS.map(
+    ([head, gloss]): Dictionary => ({
+      id: `tatoeba-${head}-${gloss}`,
+      kind: "sentences",
+      headLang: head,
+      glossLang: gloss,
+      name: { en: "Tatoeba sentences", ko: "Tatoeba 예문", ja: "Tatoeba 例文" },
+      description: {
+        en: "Example sentences with their translations, shown under the words they contain exactly.",
+        ko: "예문과 그 번역. 단어가 정확히 들어 있는 문장만 보여 줍니다.",
+        ja: "例文とその翻訳。単語をそのまま含む文だけを表示します。",
+      },
+      source: { name: "Tatoeba", url: "https://tatoeba.org/", credit: "Tatoeba" },
+      license: "CC BY 2.0 FR",
+    }),
+  ),
 ];
 
 /** Data used without being a dictionary of its own, credited on the about page. */
@@ -262,11 +274,9 @@ export const headLanguages = (): string[] => [...new Set(DICTIONARIES.flatMap((d
 
 /**
  * A dictionary's language pair in a UI language: "English–Korean", in Korean "영한". Locales name the
- * pair (`t.langPair`) from short language names (`t.langShort` for "영", "한", "일"); a sentence
- * corpus is labelled as such.
+ * pair (`t.langPair`) from short language names (`t.langShort` for "영", "한", "일").
  */
-export function langPair(d: Dictionary, t: { langPair: (head: string, gloss: string, short: Record<string, string>) => string; langShort: Record<string, string>; sentencesLabel: string }) {
-  if (d.kind === "sentences") return t.sentencesLabel;
+export function langPair(d: Dictionary, t: { langPair: (head: string, gloss: string, short: Record<string, string>) => string; langShort: Record<string, string> }) {
   return t.langPair(d.headLang, d.glossLang, t.langShort);
 }
 

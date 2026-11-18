@@ -331,19 +331,17 @@ test("every registered dictionary has data, and every data directory is register
   assert.deepEqual(Object.keys(SHARDS).sort(), [...ALL_DICTS].sort());
 });
 
-test("sentences: stored once with their translations, listed under the words they contain", { skip: !haveData }, () => {
-  const store = (sid: number) => {
-    const m = JSON.parse(fs.readFileSync(new URL("i/manifest.json", DATA), "utf8"));
-    const n = m.stores.tatoeba;
-    return JSON.parse(fs.readFileSync(new URL(`d/tatoeba/s/${sentenceShard(sid, n)}.json`, DATA), "utf8"))[sid];
-  };
-  for (const [word, lang] of [["love", "en"], ["사랑", "ko"], ["食べる", "ja"]] as const) {
-    const ids = part("tatoeba", word)?.sentences ?? [];
-    assert.ok(ids.length > 0, word);
+test("sentences: one dictionary per language pair, each sentence with only that pair's translations", { skip: !haveData }, () => {
+  const m = JSON.parse(fs.readFileSync(new URL("i/manifest.json", DATA), "utf8"));
+  const store = (id: string, sid: number) => JSON.parse(fs.readFileSync(new URL(`d/${id}/s/${sentenceShard(sid, m.stores[id])}.json`, DATA), "utf8"))[sid];
+  for (const [word, head, gloss] of [["love", "en", "ko"], ["love", "en", "ja"], ["사랑", "ko", "en"], ["食べる", "ja", "en"], ["食べる", "ja", "ko"]] as const) {
+    const id = `tatoeba-${head}-${gloss}`;
+    const ids = part(id, word)?.sentences ?? [];
+    assert.ok(ids.length > 0, `${id} ${word}`);
     for (const sid of ids.slice(0, 5)) {
-      const s = store(sid);
-      assert.equal(s.lang, lang, `${word} ${sid}`);
-      assert.ok(s.translations.length > 0 && s.translations.every((t: { lang: string }) => t.lang !== lang), `${word} ${sid}`);
+      const s = store(id, sid);
+      assert.equal(s.lang, head, `${id} ${sid}`);
+      assert.ok(s.translations.length > 0 && s.translations.every((t: { lang: string }) => t.lang === gloss), `${id} ${sid}`);
     }
   }
 });

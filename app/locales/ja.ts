@@ -34,7 +34,6 @@ const ja: Strings = {
     const s = (l: string) => (l === "ja" ? "和" : (short[l] ?? l));
     return `${s(head)}${s(gloss)}`;
   },
-  sentencesLabel: "例文",
   dictionaryOrder: "辞書と表示順",
   dictionaryOrderHint: "単語ページにこの順で表示します。辞書のオン・オフと並べ替えができます。",
   moveUp: (name: string) => `${name}を上へ`,

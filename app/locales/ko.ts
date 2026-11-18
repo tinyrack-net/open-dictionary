@@ -29,7 +29,6 @@ const ko: Strings = {
   langShort: { en: "영", ko: "한", ja: "일" } as Record<string, string>,
   // 영영, 영한, 한영, 일한 …; a Korean–Korean dictionary is a 국어사전
   langPair: (head: string, gloss: string, short: Record<string, string>) => (head === "ko" && gloss === "ko" ? "국어" : `${short[head] ?? head}${short[gloss] ?? gloss}`),
-  sentencesLabel: "예문",
   dictionaryOrder: "사전 및 순서",
   dictionaryOrderHint: "단어 페이지에 이 순서대로 보여 줍니다. 사전을 켜고 끄거나 위아래로 옮길 수 있습니다.",
   moveUp: (name: string) => `${name} 위로 이동`,

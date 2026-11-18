@@ -21,7 +21,7 @@ Static site, installable as an offline-capable app (PWA).
 | Japanese–English | JMdict | [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project) © EDRDG, via [jmdict-simplified](https://github.com/scriptin/jmdict-simplified) | CC BY-SA 4.0 |
 | Japanese–English | Wiktionary | English Wiktionary | CC BY-SA 4.0 |
 | Japanese–Korean | Korean Wiktionary | Korean Wiktionary | CC BY-SA 4.0 |
-| Sentences | Tatoeba | [Tatoeba](https://tatoeba.org/): English, Korean and Japanese with translations | CC BY 2.0 FR |
+| Each pair of English, Korean, Japanese | Tatoeba sentences | [Tatoeba](https://tatoeba.org/): example sentences with their translations, one dictionary per pair | CC BY 2.0 FR |
 
 Search ranking uses [wordfreq](https://github.com/rspeer/wordfreq) (CC BY-SA 4.0). Recordings are played from
 [Wikimedia Commons](https://commons.wikimedia.org/), each under its own license.

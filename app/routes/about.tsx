@@ -15,8 +15,16 @@ export function meta({ params }: Route.MetaArgs) {
 export default function About() {
   const t = useT();
   const lang = useLang();
+  // dictionaries that differ only in their language pair (Tatoeba's) share one card with every pair
+  const groups = new Map<string, { pairs: string[]; d: (typeof DICTIONARIES)[number] }>();
+  for (const d of DICTIONARIES) {
+    const key = `${localized(d.name, lang)}|${d.source.name}|${localized(d.description, lang)}`;
+    const g = groups.get(key);
+    if (g) g.pairs.push(langPair(d, t));
+    else groups.set(key, { pairs: [langPair(d, t)], d });
+  }
   const sources = [
-    ...DICTIONARIES.map((d) => ({ pair: langPair(d, t), name: localized(d.name, lang), source: d.source.name, url: d.source.url, license: d.license, licenseUrl: undefined, use: localized(d.description, lang) })),
+    ...[...groups.values()].map(({ pairs, d }) => ({ pair: pairs.join(" · "), name: localized(d.name, lang), source: d.source.name, url: d.source.url, license: d.license, licenseUrl: undefined, use: localized(d.description, lang) })),
     ...EXTRA_SOURCES.map((x) => ({ pair: undefined, name: x.name, source: undefined, url: x.url, license: x.license, licenseUrl: x.licenseUrl, use: localized(x.description, lang) })),
   ];
   return (

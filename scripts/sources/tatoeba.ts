@@ -1,8 +1,10 @@
-// Tatoeba (CC BY 2.0 FR): sentences in the site's languages with their translations -> "tatoeba".
+// Tatoeba (CC BY 2.0 FR): sentences in the site's languages with their translations
+// -> one dictionary per language pair, "tatoeba-<sentence lang>-<translation lang>" (registered in
+// app/lib/dicts.ts), so readers choose which pairs they see, like any other dictionary.
 //
-// Every sentence of LANGS that has a translation in another of LANGS is stored once, with all those
-// translations (sentence store, see output.ts). It is listed under each headword it contains as an
-// exact word, and only under headwords some dictionary already has. How a sentence is split into
+// A sentence of language A with translations in language B is stored in "tatoeba-A-B" with those
+// translations only (sentence store, see output.ts). It is listed under each headword it contains as
+// an exact word, and only under headwords some dictionary already has. How a sentence is split into
 // words is per language (WORDS): no stemming or other guessing, so 먹다 gets no Korean sentences
 // (they contain 먹어, 먹었다…), while Japanese uses Tatoeba's own word index, which gives each word's
 // dictionary form (食べて -> 食べる).
@@ -11,10 +13,12 @@
 import fs from "node:fs";
 import { entryKey } from "../../app/lib/keys.ts";
 import type { Sentence } from "../../app/lib/types.ts";
+import { DICTIONARIES } from "../../app/lib/dicts.ts";
 import { addSentence, addSentenceRef, bunzip, download, exists, extract, lines, raw } from "../lib/core.ts";
 import type { Source } from "../lib/source.ts";
 
-const ID = "tatoeba";
+/** The registered sentence dictionaries: [id, sentence language, translation language]. */
+const DICTS = DICTIONARIES.filter((d) => d.kind === "sentences" && d.source.credit === "Tatoeba").map((d) => [d.id, d.headLang, d.glossLang] as const);
 
 /** Site language code -> Tatoeba (ISO 639-3) code. */
 const LANGS: Record<string, string> = { en: "eng", ko: "kor", ja: "jpn" };
@@ -36,7 +40,7 @@ const pairs = () => Object.values(LANGS).flatMap((a) => Object.values(LANGS).fil
 
 export default {
   name: "Tatoeba",
-  dictionaries: [ID],
+  dictionaries: DICTS.map(([id]) => id),
   fetch() {
     for (const code of Object.values(LANGS)) {
       download(`tatoeba/${code}_sentences.tsv.bz2`, `https://downloads.tatoeba.org/exports/per_language/${code}/${code}_sentences.tsv.bz2`);
@@ -89,22 +93,22 @@ export default {
         index.set(sid, [...forms]);
       }
 
-    let stored = 0;
-    let refs = 0;
+    const counts: Record<string, number> = {};
     for (const [sid, list] of translations) {
       const s = text.get(sid)!;
-      const sentence: Sentence = { lang: s.lang, text: s.text, translations: list.map((t) => text.get(t)!) };
-      let listed = false;
-      for (const word of new Set(WORDS[s.lang]?.(s.text, sid, index) ?? []))
-        if (addSentenceRef(ID, entryKey(word), Number(sid))) {
-          listed = true;
-          refs++;
-        }
-      if (listed) {
-        addSentence(ID, Number(sid), sentence);
-        stored++;
+      const words = [...new Set(WORDS[s.lang]?.(s.text, sid, index) ?? [])].map(entryKey);
+      for (const [id, head, gloss] of DICTS) {
+        if (s.lang !== head) continue;
+        const into = list.map((t) => text.get(t)!).filter((t) => t.lang === gloss);
+        if (!into.length) continue;
+        let listed = false;
+        for (const key of words) if (addSentenceRef(id, key, Number(sid))) listed = true;
+        if (!listed) continue;
+        const sentence: Sentence = { lang: s.lang, text: s.text, translations: into };
+        addSentence(id, Number(sid), sentence);
+        counts[id] = (counts[id] ?? 0) + 1;
       }
     }
-    return `${stored} sentences with translations, listed under ${refs} exact word matches`;
+    return `sentences per dictionary ${JSON.stringify(counts)}`;
   },
 } satisfies Source;

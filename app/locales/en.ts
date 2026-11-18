@@ -35,8 +35,6 @@ const en = {
   langShort: { en: "English", ko: "Korean", ja: "Japanese" } as Record<string, string>,
   /** a dictionary's language pair: headwords in `head`, definitions in `gloss` */
   langPair: (head: string, gloss: string, short: Record<string, string>) => `${short[head] ?? head}–${short[gloss] ?? gloss}`,
-  /** label of a sentence corpus in place of a language pair */
-  sentencesLabel: "Sentences",
   /** settings: the dictionary list */
   dictionaryOrder: "Dictionaries and order",
   dictionaryOrderHint: "Shown on word pages in this order. Turn dictionaries on or off and move them up or down.",
