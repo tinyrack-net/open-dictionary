@@ -46,57 +46,68 @@ const CHUNK_BYTES = 200_000;
 
 const chunkCount = (bytes: number) => 2 ** Math.max(0, Math.ceil(Math.log2(Math.max(1, bytes / CHUNK_BYTES))));
 
-/** Writes every dictionary's chunks; returns their chunk counts and a size report. */
+/**
+ * Writes every dictionary's chunks; returns their chunk counts and a size report. Memory: the largest
+ * dictionary serializes to ~700 MB, so nothing is held for a whole dictionary. A first pass only
+ * measures (to size the chunk count), the second serializes one chunk at a time, and each written
+ * part is dropped from memory.
+ */
 function writeDictionaries() {
   fs.rmSync(path.join(OUT, "d"), { recursive: true, force: true });
   const shards: Record<string, number> = {};
   const report: Record<string, unknown> = {};
   for (const d of DICTIONARIES) {
-    // serialize once; big headwords go to their own file
-    const items: [string, string][] = [];
     let total = 0;
-    for (const [key, h] of headwords) {
-      const part: DictPart | undefined = h.parts[d.id];
+    let count = 0;
+    for (const h of headwords.values()) {
+      const part = h.parts[d.id];
       if (!part) continue;
-      const json = JSON.stringify(part);
-      items.push([key, json]);
-      total += Math.min(json.length, OWN_FILE_BYTES);
+      total += Math.min(JSON.stringify(part).length, OWN_FILE_BYTES);
+      count++;
     }
-    if (!items.length) {
+    if (!count) {
       console.log(`  ${d.id}: no data (source missing?)`);
       continue;
     }
     const n = chunkCount(total);
     shards[d.id] = n;
+    // keys per chunk, in headword order
+    const byChunk = new Map<string, string[]>();
+    for (const [key, h] of headwords) {
+      if (!h.parts[d.id]) continue;
+      const s = shardOf(key, n);
+      let keys = byChunk.get(s);
+      if (!keys) byChunk.set(s, (keys = []));
+      keys.push(key);
+    }
     const dir = path.join(OUT, "d", d.id);
     rmrf(dir);
-    const chunks = new Map<string, string[]>();
     let ownFiles = 0;
-    for (const [key, json] of items) {
-      const s = shardOf(key, n);
-      let body = json;
-      if (json.length > OWN_FILE_BYTES) {
-        const file = ownFileName(key);
-        writeData(path.join(dir, "x", `${file}.json`), json);
-        body = JSON.stringify({ $file: file });
-        ownFiles++;
-      }
-      let c = chunks.get(s);
-      if (!c) chunks.set(s, (c = []));
-      c.push(`${JSON.stringify(key)}:${body}`);
-    }
     let bytes = 0;
     let max = 0;
     let gz = 0;
     let i = 0;
-    for (const s of [...chunks.keys()].sort()) {
-      const json = `{${chunks.get(s)!.join(",")}}`;
+    for (const s of [...byChunk.keys()].sort()) {
+      const items: string[] = [];
+      for (const key of byChunk.get(s)!) {
+        const h = headwords.get(key)!;
+        let json = JSON.stringify(h.parts[d.id]);
+        delete h.parts[d.id];
+        if (json.length > OWN_FILE_BYTES) {
+          const file = ownFileName(key);
+          writeData(path.join(dir, "x", `${file}.json`), json);
+          json = JSON.stringify({ $file: file });
+          ownFiles++;
+        }
+        items.push(`${JSON.stringify(key)}:${json}`);
+      }
+      const json = `{${items.join(",")}}`;
       bytes += json.length;
       max = Math.max(max, json.length);
       if (i++ % 16 === 0) gz += zlib.gzipSync(json).length * 16; // sampled compressed size
       writeData(path.join(dir, `${s}.json`), json);
     }
-    report[d.id] = { headwords: items.length, chunks: chunks.size, ownFiles, mb: +(bytes / 1e6).toFixed(0), avgKb: +(bytes / chunks.size / 1e3).toFixed(0), maxKb: +(max / 1e3).toFixed(0), avgGzKb: +(gz / chunks.size / 1e3).toFixed(0) };
+    report[d.id] = { headwords: count, chunks: byChunk.size, ownFiles, mb: +(bytes / 1e6).toFixed(0), avgKb: +(bytes / byChunk.size / 1e3).toFixed(0), maxKb: +(max / 1e3).toFixed(0), avgGzKb: +(gz / byChunk.size / 1e3).toFixed(0) };
     console.log(`  ${d.id}:`, JSON.stringify(report[d.id]));
   }
   return { shards, report };
@@ -116,15 +127,14 @@ const CHUNK = 2500;
 const TOP_N = 15;
 const TOP_MAX_LEN = 16;
 
-function writeIndex(shards: Record<string, number>) {
+function writeIndex(shards: Record<string, number>, masks: Map<string, number>) {
   const dir = path.join(OUT, "i");
   rmrf(dir);
   const rows: { f: string; cp: string[]; row: IndexRow; s: number }[] = [];
-  for (const h of headwords.values()) {
+  for (const [key, h] of headwords) {
     const f = foldKey(h.w);
-    const ids = Object.keys(h.parts);
-    if (!f || !ids.length) continue;
-    const mask = dictMask(ids);
+    const mask = masks.get(key) ?? 0;
+    if (!f || !mask) continue;
     const row: IndexRow = h.freq ? [h.w, mask, Math.round(h.freq * 10)] : [h.w, mask];
     rows.push({ f, cp: Array.from(f), row, s: rankScore(row) });
   }
@@ -160,11 +170,17 @@ function writeIndex(shards: Record<string, number>) {
 /** Writes everything; returns the data version. */
 export function writeSite(): string {
   fs.mkdirSync(OUT, { recursive: true });
-  const { shards, report } = writeDictionaries();
-  writeIndex(shards);
+  // which dictionaries have each headword, recorded before the writer drops the parts
+  const masks = new Map<string, number>();
   const stats: Record<string, number> = { headwords: headwords.size };
   for (const d of DICTIONARIES) stats[d.id] = 0;
-  for (const h of headwords.values()) for (const id of Object.keys(h.parts)) stats[id]++;
+  for (const [key, h] of headwords) {
+    const ids = Object.keys(h.parts);
+    masks.set(key, dictMask(ids));
+    for (const id of ids) stats[id]++;
+  }
+  const { shards, report } = writeDictionaries();
+  writeIndex(shards, masks);
   fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ builtAt: new Date().toISOString(), stats, sizes: report }, null, 2));
   console.log("  stats", JSON.stringify(stats));
   const version = contentHash.digest("hex").slice(0, 12);
